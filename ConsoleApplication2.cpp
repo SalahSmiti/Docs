@@ -1,4 +1,4 @@
-int BarreHorizentale(int x,int y,char tab[],int taille)
+void BarreHorizentale(int x,int y,char tab[],int taille)
 {
   
     for(int i = 0; i< x; ++i)
@@ -16,7 +16,7 @@ int BarreHorizentale(int x,int y,char tab[],int taille)
     
 }
 
-int BarreVerticale(int x,int y,char tab[],int taille)
+void BarreVerticale(int x,int y,char tab[],int taille)
 {
     for(int i = 0; i< taille; ++i)
     {
@@ -66,5 +66,46 @@ struct Point
     return p;
   }
 
+int Egalite(Point p1,Point p2)
+{
+	if(p1.x == p2.x && p1.y == p2.y)
+		return 1;
+	return 0;
+}
+
+void BarreHorizentale2(Point p,char tab[],int taille)
+{
+  
+    for(int i = 0; i< p.x; ++i)
+    {
+        printf(" ");
+    }
+    for(int i = 0; i<  p.y; ++i)
+    {
+      printf("\n");
+    }
+    for(int i = 0; i< taille; ++i)
+    {
+       printf("%c ", tab[i]);
+    }
+    
+}
+
+void BarreVerticale2(Point p,char tab[],int taille)
+{
+    for(int i = 0; i< taille; ++i)
+    {
+	    for(int i = 0; i< p.x; ++i)
+	    {
+		printf(" ");
+	    }
+	    for(int i = 0; i< taille + p.y; ++i)
+	    {
+	      printf("\n");
+	    }
+       printf("%c ", tab[i]);
+    }
+    
+}
 
 
