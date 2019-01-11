@@ -129,6 +129,27 @@ depart.x = 2;
 depart.y = 2;
 cible.x = 20;
 cible.y = 15;
+
+
+    int  number = 0;
+
+
+	
+while (number != key_esc) 
+{
+	scanf("%d", &number);
+	if(number == 6)
+	    PlusX(depart, 80);
+	if(number == 4)
+	    MoinsX(depart, 0);
+	if(number == 8)
+	    PlusY(depart, 28);
+	if(number == 2)
+	    MoinsY(depart, 0);
+	if(Egalite(depart,cible) == 1)
+	     printf("Gagné!");
+	number = key_esc;
 }
 
+}
 
