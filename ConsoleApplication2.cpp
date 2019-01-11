@@ -109,3 +109,26 @@ void BarreVerticale2(Point p,char tab[],int taille)
 }
 
 
+
+
+struct Point
+{
+    int x;
+    int y;
+} depart, cible;
+void main ())
+{
+char murHorizental[80];
+char murVertical[28];
+BarreHorizentale(0,0,murHorizental,80);
+BarreHorizentale(28,0,murHorizental,80);
+BarreVerticale(0,0,murVertical,28);
+BarreVerticale(0,80,murVertical,28);
+
+depart.x = 2;
+depart.y = 2;
+cible.x = 20;
+cible.y = 15;
+}
+
+
