@@ -151,5 +151,28 @@ while (number != key_esc)
 	number = key_esc;
 }
 
+	
+void pgcd (int a, int b) 
+{
+  int r;
+  if(b>a)
+  {
+      printf("Permutation des paramètres \n");
+      int temp = a ;
+      a = b;
+      b = temp;
+  }
+  while (1) {
+    r = a % b;
+    if (r == 0)
+    {
+      printf("Le PGCD est égal à %d",b);
+      break;  
+    }
+    a = b;
+    b = r;
+  }
+}
+	
 }
 
