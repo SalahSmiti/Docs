@@ -152,6 +152,8 @@ while (number != key_esc)
 }
 
 	
+#include <stdio.h>
+
 void pgcd (int a, int b) 
 {
   int r;
@@ -172,6 +174,12 @@ void pgcd (int a, int b)
     a = b;
     b = r;
   }
+}
+int main()
+{
+    pgcd(6,12);
+
+    return 0;
 }
 	
 	
