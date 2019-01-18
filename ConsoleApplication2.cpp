@@ -174,5 +174,28 @@ void pgcd (int a, int b)
   }
 }
 	
+	
+	
+#include <stdio.h>
+
+void Transformer (char mot_a_changer[]) 
+{
+    for (char* p = mot_a_changer; p = strchr(p, 'e'); ++p) {
+        *p = '3';
+    }
+    for (char* p = mot_a_changer; p = strchr(p, 'a'); ++p) {
+        *p = '4';
+    }
+    printf("%s\n", mot_a_changer);  // 3v4lu4tion
+}
+int main()
+{
+    char mot_a_changer[] = "evaluation!";
+    Transformer (mot_a_changer);
+    return 0;
+}
+
+	
+	
 }
 
