@@ -61,7 +61,7 @@ prenom_pers varchar2(50) not null,
   nom_pers varchar2(50) not null,
     profession varchar2(50) ,
       grade varchar2(50) ,
-        profil varchar2(50) l,
+        profil varchar2(50) ,
         CONSTRAINT pk_personne PRIMARY KEY (num_pers),
   CONSTRAINT fk_campagne
     FOREIGN KEY (code_campagne)
