@@ -1,4 +1,4 @@
-
+https://perso.liris.cnrs.fr/pchampin/enseignement/algo/exercices/tableaux.html
 #define PORT 5555
 #define LGL 100       /* Longueur max d'une ligne de fichier   */
 
