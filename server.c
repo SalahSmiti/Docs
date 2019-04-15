@@ -325,3 +325,48 @@ int main(){
 
 	return 0;
 }
+
+Déroulement du projet
+Le projet est divisé en deux parties, chaque partie faisant l'objet d'une remise de rapport. Des commentaires vous seront faits à l'issue de la première partie. Ces commentaires sont à prendre en compte pour la deuxième partie.
+Lors de la première partie, vous devez développer la partie algorithmique de votre programme. Lors de la deuxième partie, il faut corriger les problèmes détectés par votre encadrant et développer l'interface graphique. Attention : l'interface graphique ne doit pas apparaître lors de la première partie !
+
+Les principales étapes du projet sont les suivantes : 
+• Choix du projet => du 1 mars au 7 mars 2019 (12:15h)
+• Première séance encadrée => 07 mars 2019 (Groupes 5-8) et le 08 mars 2019 (Groupes 1-4). Cette première séance sert à valider l'ensemble des projets choisis. Elle est programmée après 2Cr de TD (C2C3)
+• Remise du rapport de la première partie => 08 avril  2019 à midi dernier délai
+• La deuxième séance encadrée => 11 avril en C2C3 (pour les groupes 5-8) ou 12 avril en c5C7 pour les groupes  1-4.
+• Troisième séance encadrée =>  09 mai (groupes 3, 4), 10 mai (groupes 7, 8), 16 mai (groupes 1,2) et 17 mai (groupes ou 2 mai 2018. Cette séance réservée pour l'interface graphique IHM.
+• Remise du rapport de la deuxième partie => 07 juin 2019 à 13h00 dernier délai
+• Soutenance :  12 juin 2019 (journée) et 13 et 14 juin (matin)  (sem 24)
+													      
+													      
+Attention les figures imposées servent de base pour la notation.
+
+Les notes d'un binôme peuvent être différentes si il apparait une différence de travail notoire.
+
+Les figures imposées peuvent être différentes d'un sujet à un autres et d'un binôme à un autre. Il y a minimum 7 figures imposées par sujet dont 4 sont communes pour l’ensemble des sujets :
+1. Factorisation du code : au moins trois modules et noms de classes distincts
+2. Documentation et commentaires du code
+3. Tests unitaires : (au moins 4 méthodes avec au moins 2 cas testés par méthode)
+4. Création d'un type d’objet (classe) : il devra contenir au moins deux  variables d'instance
+Pour chaque sujet proposé, les étudiant ont le libre choix de prendre trois autres figures imposées parmis les figures suivantes : 
+• Héritage au moins entre deux types créés
+• Héritage depuis un type intégré (hors en IHM)
+• Fonction récursive (dans le cœur du projet)
+• Structure de données dynamique (autre que celles intégrées à Python)
+• Lecture/ écriture de fichiers : (type de fichier adapté – pas de « pickle »).
+• Accès BDD (serveur BDD à valider avec l’encadrant
+• Utilisation de calcul vectoriel (évaluer le gain en termes de temps d’exécution).
+• Autres : autres figured peuvent être précisées selon le sujet
+Pour la 1ère étape :
+1. réaliser votre découpage de votre programme en classe en s'appuyant sur un diagramme de classes (pour générer un diagramme de classe
+2. Respecter les 4 première figures imposés. 
+3. Respecter les autres figures imposées (au minimum 3 figures supplémentaires) 
+4. un jeu de tests unitaires (toutes les classes intermédiaires doivent être testées).
+La manipulation de fichiers texte pourra être utile pour certains sujets.
+
+• Pour la 2ème étape, en plus des figures imposées pour le 1ère étape :
+1. Intégrer les corrections de la première partie.
+2. Interface graphique (PyQt5 est recommandée)
+Note : Il est indispensable que le développement de votre projet soit fait sous Python 3.6
+
