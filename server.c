@@ -1,3 +1,130 @@
+#include <stdio.h>
+#include <Aff_Robot.h>
+
+unsigned char Plan_Env[100];
+unsigned char Plan_Robot[100];
+unsigned char Var_Capteurs;
+octet input;
+const char led_nord = '7';
+const char led_sud = '6';
+const char led_ouest = '5';
+const char led_est = '4';
+int Pos_Robot;
+
+
+int main()
+{
+    Init_Liaison();
+    clrscr();
+	
+    return 0;
+}
+
+void Reac_capteurs()
+{
+	Var_Capteurs = 0x0A;
+	if(input == 'S')
+	{
+		if(Pos_Robot + 10 < 99 && Plan_Env[Pos_Robot + 10] != 'X')
+		{
+			Pos_Robot =+ 10;
+			Plan_Robot[Pos_Robot] = Plan_Env[Pos_Robot];
+		}
+	}
+	if(input == 'N')
+	{
+		if(Pos_Robot - 10 >= 0 && Plan_Env[Pos_Robot - 10] != 'X')
+		{
+			Pos_Robot =- 10;
+		}
+	}
+	if(input == 'E' )
+	{
+		if(Pos_Robot + 1 <= 99 && Plan_Env[Pos_Robot + 1] != 'X')
+		{
+			Pos_Robot =- 1;
+		}
+	}
+	if(input == 'O'  && Plan_Env[Pos_Robot - 1] != 'X')
+	{
+		if(Pos_Robot - 1 >= 0)
+		{
+			Pos_Robot =- 1;
+		}
+	}
+	
+}
+
+void ISR(USART0_RX_vect)
+{
+	while(true)
+	{
+		clrscr();
+		Var_Capteurs = 0x0A;
+		input = Lit_C();
+		switch(input) 
+		{
+		   case 'N'  :
+			Var_Capteurs = led_nord;
+		      break;
+		   case 'S' :
+			Var_Capteurs = led_sud;
+		      break; 
+		   case 'O'  :
+			Var_Capteurs = led_ouest;
+		      break;
+		   case 'E' :
+			Var_Capteurs = led_est;
+		      break; 
+		}
+	}
+	
+}
+
+
+
+void Affich_Carto()
+{
+   clrscr();
+   for (i=1; i<=99; i++)
+   {
+       Ecrit_C(Plan_Robot[i]);
+       Ecrit_C(0x20);
+       if (i % 10 == 0)
+          Ecrit_C("\n");
+   }
+     Ecrit_C("\n");
+     Ecrit_C("\n");
+     Ecrit_C("\n");
+     Ecrit_C("\n");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 https://perso.liris.cnrs.fr/pchampin/enseignement/algo/exercices/tableaux.html
 #define PORT 5555
 #define LGL 100       /* Longueur max d'une ligne de fichier   */
