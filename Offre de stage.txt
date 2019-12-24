@@ -1,0 +1,38 @@
+CFAC Group est à la recherche de stagiaire pour intégrer son équipe de recherche et développement.
+Au sein d'une équipe de recherche vous serez amener à développer des besoins spécifiés par votre lead technique.
+Une formation et un suivie vous sera assuré pour monter en compétence et acquérir les connaissance nécessaires pour intégrer les équipes CFAC basé à une échelle internationale à la fin de votre stage.
+Votre profil :
+-  De formation supérieure en informatique (Bac +5), vous êtes à la recherche d’un stage d’une durée de 6 mois, vous disposez de bonnes connaissances dans le développement d'application Web, 
+passionné(e) par les nouvelles technologies et le Cloud, vous maitrisez les technologies du Web. Vous êtes rigoureux (se), proactif (ve) et autonome. 
+Vous êtes doté(e) d'un esprit de synthèse, vous êtes organisé(e), impliqué(e) et curieux (se).
+
+-  Une première expérience en développement logiciel front to back sous un environnement .net.
+
+
+Au quotidien, vous serez en charge avec notre équipe de développeurs de :
+-  Assurer le développement des nouvelles applications Web orienté SOA.
+
+-  Assurer la maintenance des applications existantes (évolutive et corrective) liées aux technologies Web.
+
+-  Améliorer les pratiques de développement (argilisation, livraison continue, documentation, etc.).
+
+-  Garantir la qualité des développements et des livrables (process, outils, etc.).
+
+-  Garantir la maintenabilité, la performance des applications et mettre en production.
+
+
+
+Compétences requises :
+-  En Front end : JavaScript, HTML/CSS ,Angular / ReactJS/ VueJS …
+
+-  En Back end: C# .Net
+
+-  De bonnes connaissances des bases de données relationnelles (SQL Server, Oracle, ...).
+
+-  Une capacité à travailler en équipe.
+
+-  Maitrise de la langue française et anglais technique.
+
+-  Connaissance des méthodologies SCRUM & Agile serait un plus
+
+Des postes en développement sont à prévoir à la fin du stage.
