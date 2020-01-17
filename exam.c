@@ -1,3 +1,11 @@
+/******************************************************************************
+
+                            Online C Compiler.
+                Code, Compile, Run and Debug C program online.
+Write your code in this editor and press "Run" button to compile and execute it.
+
+*******************************************************************************/
+
 #include<stdio.h>
 #include<conio.h>
 #include<string.h>
@@ -70,9 +78,9 @@ printf("\t\t\tFaites votre choix...\n");
  			clrscr();
          printf("\n voici - %s - code en morse\n\n",c);
          affiche_morse(c);break;
- case'2':saisie_m(c);getch();break;
- case'3':help(m,t);getch();break;
- case'4':*k=0;break;
+ case'2':getch();break;
+ case'3':getch();break;
+ case'4':break;
  default:printf("\a");
  }
 }
