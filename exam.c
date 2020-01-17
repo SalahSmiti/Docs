@@ -1,117 +1,123 @@
-#include <stdio.h>
-//#include <windows.h>
+#include<stdio.h>
+#include<conio.h>
+#include<string.h>
 
-typedef struct Point Point;
-struct Point
-{
-    int x;
-    int y;
+
+struct LettreMorse {
+char lettre;
+char morse[7];
 };
 
 int main()
 {
-    char arr[30];
-    int i = 30;
-    remplirTableauAvecAlphabet(arr,i);
-    for(int j=0; j<30; j++)
+    LettreMorse Alphabet[36] =
     {
-        printf("%c",arr[j]);
-    }
-    //Locate(3,2);
+        {'A',".-"},
+        {'B',"-..."},
+        {'C',"-.-."},
+        {'D',"-.."},
+        {'E',"."},
+        {'F',"..-."},
+        {'G',"--."},
+        {'H',"...."},
+        {'I',".."},
+        {'J',".---"},
+        {'K',"-.-"},
+        {'L',".-.."},
+        {'M',"--"},
+        {'N',"-."},
+        {'O',"---"},
+        {'P',".--."},
+        {'Q',"--.-"},
+        {'R',".-."},
+        {'S',"..."},
+        {'T',"-"},
+        {'U',"..-"},
+        {'V',"...-"},
+        {'W',".--"},
+        {'X',"-..-"},
+        {'Y',"-.--"},
+        {'Z',"--.."},
+        {'0',"-----"},
+        {'1',".----"},
+        {'2',"..---"},
+        {'3',"...--"},
+        {'4',"....-"},
+        {'5',"....."},
+        {'6',"-...."},
+        {'7',"--..."},
+        {'8',"---.."},
+        {'9',"---."}
+    };
     
-    Point point;
-    
-    point.x = 10;
-    point.y = 20;
-    plusX(point,30);
+    char MaChaineATranscoder[30] = "";
+    menu(MaChaineATranscoder);
     return 0;
 }
 
-void plusX(Point point,int max)
+void menu(char c[])
 {
-    if(point.x +1 <= max)
-        point.x = point.x +1;
+printf(" Vous desirez :\n\n");
+printf("\t1 : Coder un texte en morse\n\n");
+printf("\t2 : Decoder un texte morse\n\n");
+printf("\t3 : Quitter le programme\n\n\n");
+printf("\t\t\tFaites votre choix...\n");
+
+
+ switch(getch())
+ {
+ case'1':SaisirUneChaineATranscoder(c);
+ 			clrscr();
+         printf("\n voici - %s - code en morse\n\n",c);
+         affiche_morse(c);break;
+ case'2':saisie_m(c);getch();break;
+ case'3':help(m,t);getch();break;
+ case'4':*k=0;break;
+ default:printf("\a");
+ }
 }
 
-void plusY(Point point,int max)
+void SaisirUneChaineATranscoder(char c[])
 {
-    if(point.y +1 <= max)
-        point.y = point.x +1;
+clrscr();
+printf("\t\t\t* Codage d'un texte en morse *\n\n\n");
+printf("\tVeuillez saisir votre phrase a coder en morse (200 caracteres max)\n\n  ->  ");
+gets(c);
 }
 
-void moinsX(Point point,int min)
-{
-    if(point.x - 1 >= min)
-        point.x = point.x - 1;
-}
 
-void moinsY(Point point,int min)
+void LettreVersMorse(char caractere)
 {
-    if(point.y - 1 >= min)
-        point.y = point.x - 1;
-}
-
-int egalite(point p1,point p2)
-{
-    if(p1.x == p2.x && p1.y == p2.y)
-        return 1;
-    return 0;
-}
- 
-/*void Locate(int x,int y)
-{
-    HANDLE H=GetStdHandle(STD_OUTPUT_HANDLE);
-    COORD C;
-    C.X=x;
-    C.Y=y;
-    SetConsoleCursorPosition(H,C);
-}*/
-
-
-void barreHorizentale(int x,int y,char tab[],int taille)
-{
-    //Locate(x,y);
-    for(int i = 0; i < taille; i++)
+    int i,j=0;
+    for(j=0;j<37;j++)
     {
-        printf("%c",tab[i]);
+    
+        if(caractere==Alphabet[i].lettre)
+        {
+            i = 1;
+            cprintf("%s",Alphabet[i].LettreMorse);
+        }
     }
+    if(i == 0)
+        printf("%c",'?');
+
 }
-void barreHorizentale2(Point p,char tab[],int taille)
+
+void affiche_morse(char c[])
 {
-    //Locate(p.x,p.y);
-    for(int i = 0; i < taille; i++)
+    int i = 0;
+    
+    for(i=0;i<taille_mot(c);i++)
     {
-        printf("%c",tab[i]);
+    LettreVersMorse(c[i]);
+    
     }
+    getch();
 }
-void barreVerticale(int x,int y,char tab[],int taille)
+
+int taille_mot(char c[])
 {
-    //Locate(x,y);
-    for(int i = 0; i < taille; i++)
-    {
-        printf("%c\n",tab[i]);
-    }
+int i=0;
+while(c[i]!='\0'){i++;}
+return i;
 }
-
-void barreVerticale2(Point p,char tab[],int taille)
-{
-    //Locate(p.x,p.y);
-    for(int i = 0; i < taille; i++)
-    {
-        printf("%c\n",tab[i]);
-    }
-}
-
-void remplirTableauAvecAlphabet(char tab[],int taille)
-{
-    for(int i = 0; i < taille; i++)
-    {
-        if(i<26)
-        tab[i] = (char)(97 + i);
-        else
-        tab[i] = (char)(97 + i - 26);
-    }
-}
-
-
-
