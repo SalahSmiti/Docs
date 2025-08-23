@@ -1,0 +1,2844 @@
+#if DEBUG
+// #define _SaveDocAsPDF_
+#if _SaveDocAsPDF_
+#warning "_SaveDocAsPDF_ ON"
+#endif
+#endif
+
+
+using GenBox.Legacy.Core;
+using GenBox.Logging.Contracts;
+//using Microsoft.VisualBasic;
+using PDM.Contracts;
+using SwConst;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace GenBox.Legacy
+{
+
+    public class __3D
+    {
+
+        #region --- static (Log)
+
+        private static readonly IGBLogger spIGBLog = _GBLogManager.GetLogger<__3D>();
+
+        static void logTrace(string Txt, [CallerLineNumber] int LineNumber = 0)
+        {
+            spIGBLog?.Trace($"[{LineNumber}]:{Txt}");
+        }
+
+        static void logInfo(string Txt, [CallerLineNumber] int LineNumber = 0)
+        {
+            spIGBLog?.Info($"[{LineNumber}]:{Txt}");
+        }
+
+        static void logError(string Txt, [CallerLineNumber] int LineNumber = 0)
+        {
+            spIGBLog?.Error($"[{LineNumber}]:{Txt}");
+        }
+
+        static void logError(Exception Ex, [CallerLineNumber] int LineNumber = 0)
+        {
+            spIGBLog?.Error($"[{LineNumber}]: Exception .Message='{Ex.Message}' .StackTrace=<<{Ex.StackTrace}>>");
+        }
+
+        static int lineNumber([CallerLineNumber] int lineNumber = 0)
+        {
+            return lineNumber;
+        }
+
+        #endregion
+
+        #region --- CreateBox3D
+
+        public static bool CreateBox3D(IGlobal pIGlobal,
+                                        IPDM pIPDM,
+                                        IFW3D pIFW3D,
+                                        IRoutage pIRoutage,
+                                        IMDI pIMDI,
+                                        bool OnErrorContinue,
+                                        IGenFWConfig3D pIGenFWConfig3D,
+                                        string ININame,
+                                        ICSVFile pICSVFile,
+                                        IxDYN pIxDYN,
+                                        IxSW pIxSW,
+                                        IGenBoxConfig pIGenBoxConfig)
+        {
+            try
+            {
+                SldWorksApplication.Initialize(); // CreateBox3D(-)
+
+                pIFW3D.SoftWareVersion = pIGlobal.SoftWareVersion;
+
+                //exemple ININame = N667_X2H01_01
+                bool vret = false;
+                bool _versionNew = pIFW3D.NewVersion = pIGlobal.IsNewVersion(ININame);
+                if (_versionNew)
+                {
+                    return vret = createBox3D(pIGlobal,
+                        pIPDM,
+                        pIFW3D,
+                        pIRoutage,
+                        pIMDI,
+                        OnErrorContinue,
+                        pIGenFWConfig3D, ININame,
+                        pICSVFile,
+                        pIxDYN,
+                        pIxSW,
+                        pIGenBoxConfig);
+                }
+                else
+                {
+                    return vret = false;
+                }
+            }
+            catch (Exception e)
+            {
+                pIRoutage.AddLogBox(pIFW3D.Logs, 0, e.Message, eStatusLog.Error);
+                if (OnErrorContinue)
+                {
+                    //Avertissement (Alerte Bleue)
+                    pIRoutage.CreateInfoLog("CreateBox3D", "!! Error=" + e.Message, true, false, "");
+                }
+                else
+                {
+                    //Erreur (Alerte Orange) Stop Process
+                    pIRoutage.CreateInfoLog("CreateBox3D", "!", true, false, e.Message);
+                }
+                return false;
+            }
+            finally
+            {
+                SldWorksApplication.Terminate(); // CreateBox3D(+)
+            }
+        }
+
+        struct LanguetteINIProjet
+        {
+            public int Index;
+            public string Name1;
+            public string Name2;
+            public string CoteName;
+            public string CoteValue;
+            public bool ErrorName1;
+            public bool ErrorName2;
+            public bool ErrorCote;
+
+            public override string ToString()
+            {
+                return $"{GetType().Name} Index={Index} Name1='{Name1}' Name2='{Name2}' CoteName='{CoteName}' CoteValue='{CoteValue}' ErrorName1={ErrorName1} ErrorName2={ErrorName2} ErrorCote={ErrorCote}";
+            }
+        }
+
+        /***
+         * - cf \repos\i0016-genbox\Legacy\GenBox\GenBox\Bibliotheques\_3D.vb
+        ***/
+        static bool createBox3D(IGlobal pIGlobal,
+                                IPDM pIPDM,
+                                IFW3D pIFW3D,
+                                IRoutage pIRoutage,
+                                IMDI pIMDI,
+                                bool OnErrorContinue,
+                                IGenFWConfig3D pIGenFWConfig3D,
+                                string ININame,
+                                ICSVFile pICSVFile,
+                                IxDYN pIxDYN,
+                                IxSW pIxSW,
+                                IGenBoxConfig pIGenBoxConfig)
+        {
+
+            #region --- getSection, getFile
+
+            bool getSection(string FileName, string SectionName,
+                                out string[] sectionLines,
+                                int LineNumber)
+            {
+                sectionLines = null;
+
+                if (string.IsNullOrEmpty(FileName)) return false;
+                if (string.IsNullOrEmpty(SectionName)) return false;
+
+                string _filePath = FileName;
+                //if (!File.Exists(_filePath))
+                //{
+                //    logError($"{nameof(getSection)} !File.Exists(_filePath='{_filePath}') ", LineNumber);
+                //    string _rootDir = pIPDM.RootFolder();
+                //    _filePath = GenBoxPaths.ResolveFilePath(pIPDM, _filePath, _rootDir);
+                //    logError($"{nameof(getSection)} GenBoxPaths.ResolveFilePath(_filePath='{_filePath}', _rootDir='{_rootDir}') -> '{_filePath}'", LineNumber);
+                //}
+
+                if (!File.Exists(_filePath))
+                {
+                    logError($"{nameof(getSection)} -> false !File.Exists('{_filePath}')", LineNumber);
+                    return false;
+                }
+
+                bool _getSection = pIRoutage.GetSection(pIFW3D.Logs, LineNumber, SectionName, // getSection
+                                            _filePath, SectionName,
+                                            out sectionLines,
+                                            CloseFile: false,
+                                            KeyRun: "",
+                                            ConfigLog: pIGenFWConfig3D.Log);
+                if (!_getSection)
+                {
+                    logError($"{nameof(getSection)} -> false FileName='{FileName}' (exists={File.Exists(FileName)}) SectionName='{SectionName}'", LineNumber);
+                    return false;
+                }
+
+                logTrace($"{nameof(getSection)} -> true (sectionLines={sectionLines?.Length ?? 0}) FileName='{FileName}' SectionName='{SectionName}'", LineNumber);
+                if (sectionLines != null)
+                {
+                    for (int i = 0; i < sectionLines.Length; i++)
+                    {
+                        logTrace($"  sectionLines[{i} / {sectionLines.Length}]='{sectionLines[i]}'");
+                    }
+                }
+
+                return true;
+            }
+
+            bool getFile(string filePathi, out string filePathf, int LineNumber)
+            {
+                filePathf = string.Empty;
+                bool _getFile = false;
+                try
+                {
+                    logTrace($"{nameof(getFile)}(-) filePath='{filePathi}' File.Exists={File.Exists(filePathi)}", LineNumber);
+
+                    if (string.IsNullOrEmpty(filePathi)) return _getFile = false;
+
+#if _OLD_
+                    if (!File.Exists(filePathi))
+                    {
+                        string _rootDir = pIPDM.RootFolder();
+                        StringBuilder _sb = new StringBuilder();
+                        filePathf = GenBoxPaths.ResolveFilePath(pIPDM, filePathi, _rootDir, _sb); // getFile
+                        logTrace($"{nameof(getFile)} GenBoxPaths.ResolveFilePath(filePath='{filePathi}', _rootDir='{_rootDir}') -> '{filePathf}'", LineNumber);
+
+                        if (!File.Exists(filePathf))
+                        {
+                            logError($"{nameof(getFile)} !File.Exists('{filePathf}') ResolveFilePath=<<{_sb.ToString()}>>", LineNumber);
+                            return _getFile = false;
+                        }
+
+                        logTrace($"{nameof(getFile)} File.Exists(_filePath='{filePathf}')", LineNumber);
+                    }
+                    else
+                    {
+                        filePathf = filePathi;
+                    }
+#endif
+
+                    {
+                        string _rootDir = pIPDM.RootFolder();
+                        StringBuilder _sb = new StringBuilder();
+                        filePathf = GenBoxPaths.ResolvePDMFilePath(pIPDM, filePathi, _rootDir, _sb); // getFile
+                        bool _fileExists = !string.IsNullOrEmpty(filePathf) ? File.Exists(filePathf) : false;
+                        logTrace($"{nameof(getFile)} GenBoxPaths.ResolveFilePath(filePath='{filePathi}', _rootDir='{_rootDir}') -> '{filePathf}' File.Exists={_fileExists}", LineNumber);
+                        if (string.IsNullOrEmpty(filePathf))
+                        {
+                            logError($"{nameof(getFile)} ResolveFilePath({filePathi}) -> null <<{_sb.ToString()}>>", LineNumber);
+                            return _getFile = false;
+                        }
+                    }
+
+                    if (!pIRoutage.GetFile(pIFW3D.Logs, LineNumber, Path.GetFileName(filePathf), // getFile
+                                                path: filePathf,
+                                                false,
+                                                "",
+                                                pIGenFWConfig3D.Log))
+                    {
+                        logError($"{nameof(getFile)} pIRoutage.GetFile('{filePathf}') -> false ", LineNumber);
+                        return _getFile = false;
+                    }
+
+                    return _getFile = true;
+                }
+                finally
+                {
+                    if (!_getFile) filePathf = string.Empty;
+                    bool _fileExists = !string.IsNullOrEmpty(filePathf) ? File.Exists(filePathf) : false;
+                    logTrace($"{nameof(getFile)}(+) -> {_getFile} filePathi='{filePathi}' -> filePathf='{filePathf}' File.Exists={_fileExists}", LineNumber);
+                }
+            }
+
+            #endregion
+
+            bool vret = false;
+            string _PDF_logFolder = null;
+            string _logBoxBeginSub = string.Empty;
+            try
+            {
+                #region --- try
+                logInfo($"{nameof(__3D)}.{nameof(createBox3D)}(-) ININame='{ININame}' 1.200");
+                logInfo($"    pIPDM.RootFolder='{pIPDM.RootFolder()}'");
+                logInfo($"    pIRoutage.MyPFichierINI='{pIRoutage.MyPFichierINI}'");
+
+                _logBoxBeginSub = pIRoutage.AddLogBoxBeginSub(pIFW3D.Logs, "CreateBox3D_NEWVersion");
+
+                string _PDMRootFolder = pIGlobal.PDMRootFolder;
+                string _racinePDM = string.Empty;
+                string _pathR_BibDetails = string.Empty;
+                Model _model = new Model();
+                int _marqueur = 0;
+                string _libraryName = string.Empty; // moche ...
+
+                #region --- INITIALIZE SECTION
+                {
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "INITIALIZE", pIFW3D.Sections);
+                    pIMDI.InitializeProgressBar2(true, 29);
+
+                    if (!pIRoutage.RootFolder(pIFW3D.Logs, 1, "Capture du Dossier Racine PDM", // OK
+                        out _racinePDM,
+                        false,
+                        "",
+                        pIGenFWConfig3D.Log))
+                    {
+                        logError("pIRoutage.RootFolder -> false");
+                        return vret = false;
+                    }
+                }
+                #endregion
+
+                #region --- LOAD_FWINI SECTION
+                {
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "LOAD_FWINI", pIFW3D.Sections);
+
+                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "MyPFichierINI=" + pIRoutage.MyPFichierINI, eStatusLog.Info);
+                    logTrace("MyPFichierINI=" + pIRoutage.MyPFichierINI);
+
+                    //Exemple
+                    //N666_2H01_91
+                    string _caisson3DCreated = Path.GetFileNameWithoutExtension(pIRoutage.MyPFichierINI) + ".SLDPRT";
+                    pIFW3D.Name = _caisson3DCreated;
+                    logTrace($"pIFW3D.Name='{pIFW3D.Name}'");
+
+                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Caisson=" + _caisson3DCreated, eStatusLog.Info);
+
+                    pIxSW.AmeliorationPerf = true;
+
+                    //Get Last Version INI
+                    if (!pIRoutage.GetLastFile(pIFW3D.Logs, 2, "", pIRoutage.MyPFichierINI, false, "", pIGenFWConfig3D.Log))
+                    {
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 4, $"pIRoutage.MyPFichierINI='{pIRoutage.MyPFichierINI}') -> false", eStatusLog.Alert);
+                        logError($"pIRoutage.GetLastFile(pIRoutage.MyPFichierINI='{pIRoutage.MyPFichierINI}') -> false");
+                        return vret = false;
+                    }
+
+                }
+                #endregion
+
+                #region --- pIFW3D.Technologie, pathR_BibDetails : chemin relatif vers biblio details (insertion gouttieres .. tenons etc..
+                {
+                    pIFW3D.Technologie = pICSVFile.Technologie;
+                    logTrace($"pIFW3D.Technologie='{pIFW3D.Technologie}'");
+
+                    string[] _tabSections = null;
+                    bool _getSection = getSection(pIRoutage.MyPFichierINI, "[Details]", out _tabSections, lineNumber());
+                    //bool _getSection = pIRoutage.GetSection(pIFW3D.Logs, 3, "Details",
+                    //                            FileName: pIRoutage.MyPFichierINI,
+                    //                            SectionName: "[Details]",
+                    //                            out _tabSections,
+                    //                            false, "", pIGenFWConfig3D.Log);
+                    if (!_getSection)
+                    {
+                        logError($"getSection -> false");
+                        return vret = false;
+                    }
+
+                    if (_tabSections == null || _tabSections.Length < 1)
+                    {
+                        logError($"getSection -> _tabSections={_tabSections}");
+                        return vret = false;
+                    }
+
+                    string[] _tab = (_tabSections[0]).Split('=');
+                    if (_tab.Length >= 2)
+                    {
+                        _pathR_BibDetails = _tab[1];
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Details=" + _pathR_BibDetails, eStatusLog.Info);
+                        logTrace($"pIFW3D.Technologie='{pIFW3D.Technologie}'");
+                    }
+                    else
+                    {
+                        logError("vret = false");
+                        return vret = false;
+                    }
+                }
+                #endregion
+
+                #region --- pIFW3D.Modele
+                {
+                    string[] _tabSections = null;
+                    bool _getSection = getSection(pIRoutage.MyPFichierINI, "[Modele]", out _tabSections, lineNumber());
+                    //if (!pIRoutage.GetSection(pIFW3D.Logs, 4, "Modele",
+                    //                            pIRoutage.MyPFichierINI, "[Modele]",
+                    //                            out _tabSections,
+                    //                            false, "", pIGenFWConfig3D.Log))
+                    if (!_getSection)
+                    {
+                        logError("getSection -> false");
+                        return vret = false;
+                    }
+
+                    if (_tabSections == null || _tabSections.Length < 1)
+                    {
+                        logError($"getSection -> _tabSections={_tabSections}");
+                        return vret = false;
+                    }
+
+                    pIFW3D.Modele = _tabSections[0];
+                    _model = pIxDYN.GetStructModel(pIFW3D.Modele, ININame.Substring(7, 1), true);
+
+                    pIRoutage.AddLogBox(pIFW3D.Logs, 4, "Modele=" + pIFW3D.Modele, eStatusLog.Info);
+                    logTrace("Modele=" + pIFW3D.Modele);
+                }
+                #endregion
+
+                #region --- pIRoutage.MyPFichierINI, [Coding]
+                {
+                    string[] _tabSections = null;
+                    bool _getSection = getSection(pIRoutage.MyPFichierINI, "[Coding]", out _tabSections, lineNumber());
+                    //if (!pIRoutage.GetSection(pIFW3D.Logs, 5, "Coding",
+                    //                            pIRoutage.MyPFichierINI, "[Coding]",
+                    //                            out _tabSections,
+                    //                            false, "", pIGenFWConfig3D.Log))
+                    if (!_getSection)
+                    {
+                        logError("getSection -> false");
+                        return vret = false;
+                    }
+
+                    if (_tabSections == null || _tabSections.Length < 1)
+                    {
+                        logError($"getSection -> _tabSections={_tabSections?.Length ?? 0}");
+                        return vret = false;
+                    }
+
+                    {
+                        logTrace($"getSection('{pIRoutage.MyPFichierINI}', '[Coding]') -> _tabSections={_tabSections?.Length ?? 0}");
+                        foreach (string _tabSection in _tabSections)
+                        {
+                            logTrace($"  _tabSection='{_tabSection}'");
+                        }
+                    }
+
+                    #region --- Emplacement2D
+                    {
+                        string[] _tab = (_tabSections[0]).Split('=');
+                        if (_tab.Length < 2)
+                        {
+                            logError($"Invalid _tabSections[0]='{_tabSections[0]}'");
+                            return vret = false;
+                        }
+
+                        {
+                            StringBuilder _sb = new StringBuilder();
+                            pIFW3D.Path2DModel = GenBoxPaths.ResolvePDMFilePath(pIPDM, _tab[1], _PDMRootFolder, _sb);
+
+                            if (string.IsNullOrEmpty(pIFW3D.Path2DModel))
+                            {
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 5, $"ResolveFilePath / pIFW3D.Path2DModel Error={_sb.ToString()}", eStatusLog.Info);
+                                logError($"ResolveFilePath / pIFW3D.Path2DModel Error={_sb.ToString()}");
+                                return vret = false;
+                            }
+
+                            pIRoutage.AddLogBox(pIFW3D.Logs, 5, $"pIFW3D.Path2DModel='{pIFW3D.Path2DModel}'", eStatusLog.Info);
+                            logTrace($"pIFW3D.Path2DModel='{pIFW3D.Path2DModel}'");
+                        }
+
+                    }
+                    #endregion
+
+                    #region --- Emplacement3D
+                    {
+                        string[] _tab = (_tabSections[1]).Split('=');
+
+                        if (_tab.Length < 2)
+                        {
+                            logError($"Invalid _tabSections[1]='{_tabSections[1]}'");
+                            return vret = false;
+                        }
+
+                        {
+                            //pIFW3D.Path3DModel = Tab[1];
+                            StringBuilder _sb = new StringBuilder();
+                            pIFW3D.Path3DModel = GenBoxPaths.ResolvePDMFilePath(pIPDM, _tab[1], _PDMRootFolder, _sb);
+
+                            // pIFW3D.Path3DModel = @"C:\TMP\NO96_D_2K-WTC(1).SLDPRT"; // TMP
+
+                            if (string.IsNullOrEmpty(pIFW3D.Path3DModel))
+                            {
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 5, $"ResolveFilePath / pIFW3D.Path3DModel Error={_sb.ToString()}", eStatusLog.Info);
+                                logError($"ResolveFilePath / pIFW3D.Path3DModel Error={_sb.ToString()}");
+                                return vret = false;
+                            }
+
+                            pIRoutage.AddLogBox(pIFW3D.Logs, 5, $"pIFW3D.Path3DModel='{pIFW3D.Path3DModel}'", eStatusLog.Info);
+                            logTrace($"pIFW3D.Path3DModel='{pIFW3D.Path3DModel}'");
+                        }
+
+                    }
+                    #endregion
+
+                }
+                #endregion
+
+                #region --- CREATE_FWPATHPRT SECTION
+                {
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "CREATE_FWPATHPRT", pIFW3D.Sections);
+
+                    // Destination3D
+                    pIFW3D.Path3DCreated = Path.ChangeExtension(Path.Combine(pIGlobal.NavireDir, "FW", _model.FolderRenf, ININame),
+                                                                ".SLDPRT");
+                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Path3DCreated=" + pIFW3D.Path3DCreated, eStatusLog.Info);
+                    logTrace($"pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}'");
+
+                    if (!GBInformation.IsNumeric(_model.Renf))
+                    {
+                        pIFW3D.IndiceTechnologie = "X";
+                    }
+                    else
+                    {
+                        pIFW3D.IndiceTechnologie = "";
+                    }
+
+                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "IndiceTechnologie=" + pIFW3D.IndiceTechnologie, eStatusLog.Info);
+                }
+                #endregion
+
+#if _SaveDocAsPDF_
+                _PDF_logFolder = __Utils.FileLogDirectory(pIFW3D.Path3DCreated,
+                                                            GenBoxPaths.MyLogFolder(),
+                                                            nameof(createBox3D),
+                                                            true);
+                logTrace($"_PDF_logFolder='{_PDF_logFolder}'");
+#endif
+
+                #region --- LOCK_FWPRT SECTION
+                {
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "LOCK_FWPRT", pIFW3D.Sections);
+                }
+                #endregion
+
+                #region --- MODEL
+                {
+                    logTrace($"pIGenBoxConfig.LockStateModel='{pIGenBoxConfig.LockStateModel}'");
+                    // Generation possible que sur un Etat Terminé du fichier Model 
+                    if (pIGenBoxConfig.LockStateModel)
+                    {
+                        string _fileState = "";
+                        if (!pIRoutage.GetFileState(pIFW3D.Logs, 2, "Path3DModel",
+                            pIFW3D.Path3DModel,
+                            out _fileState,
+                            false,
+                            "",
+                            pIGenFWConfig3D.Log))
+                        {
+                            logError($"pIRoutage.GetFileState(pIFW3D.Path3DModel='{pIFW3D.Path3DModel}') -> false");
+                            return vret = false;
+                        }
+                        else
+                        {
+                            logTrace($"pIRoutage.GetFileState(pIFW3D.Path3DModel='{pIFW3D.Path3DModel}') -> _fileState='{_fileState}'");
+                            if (_fileState != "Terminé")
+                            {
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 4, "L'Etat du Fichier Model est " + _fileState + " ,seul un Etat Terminé est autorisé pour une Génération", eStatusLog.Alert);
+                                logError($"'_stateModel != \"Terminé\"' : '{_fileState}'");
+                                return vret = false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 4, "Attention .. Le Verrou LockStateModel est désactivé", eStatusLog.Info);
+                    }
+                }
+                #endregion
+
+                #region --- SLDPRT déjà créé UNE FOIS
+                {
+                    // TMP
+                    {
+                        Debug.WriteLine($"pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}' File.Exists={File.Exists(pIFW3D.Path3DCreated)}");
+                        //if (File.Exists(pIFW3D.Path3DCreated))
+                        //{
+                        //    try
+                        //    {
+                        //        File.Delete(pIFW3D.Path3DCreated);
+                        //    }
+                        //    catch
+                        //    {
+                        //    }
+                        //}
+                    }
+
+                    bool _fileExists = pIRoutage.FileExist(pIFW3D.Logs, 4, "First Generation Path3DCreated",
+                                            pIFW3D.Path3DCreated,
+                                            false,
+                                            eKeyRun.OnAlertSuccessReturnFalse.ToString(),
+                                            pIGenFWConfig3D.Log);
+
+                    logTrace($"pIRoutage.FileExist('{pIFW3D.Path3DCreated}') -> {_fileExists}");
+                    Debug.WriteLine($"_fileExists={_fileExists}"); // TMP
+
+                    if (_fileExists)
+                    {
+                        #region --- _fileExists
+                        // GetFileState
+                        string _fileState;
+                        if (!pIRoutage.GetFileState(pIFW3D.Logs, 2, Info: "",
+                            path: pIFW3D.Path3DCreated,
+                            out _fileState,
+                            false))
+                        {
+                            logTrace($"pIRoutage.GetFileState(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> false");
+                            // return vret = false;
+                        }
+                        else
+                        {
+                            logTrace($"pIRoutage.GetFileState(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> _fileState='{_fileState}'");
+                        }
+
+                        // GetUserLockFile
+                        {
+                            string _userLock;
+                            bool _getUserLockFile = pIRoutage.GetUserLockFile(pIFW3D.Logs, 4, "Path3DCreated",
+                                pIFW3D.Path3DCreated,
+                                out _userLock,
+                                false, "", pIGenFWConfig3D.Log);
+                            if (!_getUserLockFile)
+                            {
+                                _userLock = string.Empty;
+                                logTrace($"pIRoutage.GetUserLockFile(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> false");
+                                // return vret = false;
+                            }
+                            logTrace($"pIRoutage.GetUserLockFile(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> {_getUserLockFile}");
+                            pIFW3D.UserLock = _userLock;
+                        }
+
+                        if (string.IsNullOrEmpty(pIFW3D.UserLock))
+                        {
+                            // LockFileByPath
+                            if (!pIRoutage.LockFileByPath(pIFW3D.Logs, 4, "Path3DCreated", pIFW3D.Path3DCreated, false, "", pIGenFWConfig3D.Log))
+                            {
+                                logTrace($"pIRoutage.LockFileByPath(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> false");
+                                // return vret = false;
+                            }
+                        }
+                        else
+                        {
+                            if (string.Compare(pIGlobal.MyUserPDM, pIFW3D.UserLock) != 0)
+                            {
+                                // Fichier déjà verrouillé
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 4, "File Path3DCreated " + pIFW3D.Path3DCreated + " Is Locked by a other UserPDM=" + pIFW3D.UserLock, eStatusLog.Alert);
+                                logError($"pIGlobal.MyUserPDM='{pIGlobal.MyUserPDM}' != '{pIFW3D.UserLock}'");
+                                return false;
+                            }
+                        }
+                        #endregion
+                    }
+                }
+                #endregion
+
+                #region --- COPY_BIBPRT_FWPRT SECTION   ( copie vers Destination Projet )
+                {
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "COPY_BIBPRT_FWPRT", pIFW3D.Sections);
+                }
+                #endregion
+
+                #region --- COPY MODELE
+                {
+                    if (!pIRoutage.GetLastFile(pIFW3D.Logs, 2, "", pIFW3D.Path3DModel, false, "", pIGenFWConfig3D.Log))
+                    {
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 4, $"pIRoutage.GetLastFile(pIFW3D.Path3DModel='{pIFW3D.Path3DModel}') -> false", eStatusLog.Alert);
+                        logError($"pIRoutage.GetLastFile(pIFW3D.Path3DModel='{pIFW3D.Path3DModel}') -> false");
+                        return vret = false;
+                    }
+
+                    if (!pIRoutage.FileCopyByPath(pIFW3D.Logs, 1, "Copy Path3DModel --> Path3DCreated",
+                        pIFW3D.Path3DModel,
+                        pIFW3D.Path3DCreated,
+                        CloseFile: false,
+                        "",
+                        pIGenFWConfig3D.Log))
+                    {
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 4, $"pIRoutage.FileCopyByPath(pIFW3D.Path3DModel='{pIFW3D.Path3DModel}' -> .Path3DCreated='{pIFW3D.Path3DCreated}') -> false", eStatusLog.Alert);
+                        logError($"pIRoutage.FileCopyByPath(pIFW3D.Path3DModel='{pIFW3D.Path3DModel}', pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> false");
+                        return vret = false;
+                    }
+
+                    if (!File.Exists(pIFW3D.Path3DCreated))
+                    {
+                        string _log = $"!File.Exists(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}')";
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 4, _log, eStatusLog.Alert);
+                        logError(_log);
+                        return vret = false;
+                    }
+                }
+                #endregion
+
+                #region --- Génération
+#if DEBUG
+                // if (false) // TMP
+#endif
+                {
+
+                    #region --- OPEN_FWPRT SECTION
+                    {
+                        //OUVERTURE FICHIER SLDPRT cible   (copie d'un modele)
+                        //D:\CCS\N666\FW\FW DE 12 TYPE 2\N666_2H01_91.SLDPRT
+                        //**************************************************************************************************
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "OPEN_FWPRT", pIFW3D.Sections);
+                        // Open File
+                        if (!pIRoutage.OpenFile(pIFW3D.Logs, 1, "Path3DCreated", pIFW3D.Path3DCreated, "", false, "", pIGenFWConfig3D.Log))
+                        {
+                            pIRoutage.AddLogBox(pIFW3D.Logs, 4, $"pIRoutage.OpenFile(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}' -> false", eStatusLog.Alert);
+                            logError($"pIRoutage.OpenFile(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}' -> false");
+                            return vret = false;
+                        }
+                    }
+                    #endregion
+
+                    #region --- SET MODEL PROPERTIES
+                    {
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SET_PROPERTIES_FWPRT", pIFW3D.Sections);
+
+                        //Exemple pour WWWW B
+                        //LOC_1="W"
+                        //LOC_2="W"
+                        //LOC_3="W"
+                        //LOC_4="W"
+                        //ANGLE="B"
+                        pIRoutage.SetCustomProperty(pIFW3D.Logs, 2, "", "LOC_1", swCustomInfoType_e.swCustomInfoText, _model.WWWW.Substring(0, 1), false, "", pIGenFWConfig3D.Log, "BOX");
+                        pIRoutage.SetCustomProperty(pIFW3D.Logs, 2, "", "LOC_2", swCustomInfoType_e.swCustomInfoText, _model.WWWW.Substring(1, 1), false, "", pIGenFWConfig3D.Log, "BOX");
+                        pIRoutage.SetCustomProperty(pIFW3D.Logs, 2, "", "LOC_3", swCustomInfoType_e.swCustomInfoText, _model.WWWW.Substring(2, 1), false, "", pIGenFWConfig3D.Log, "BOX");
+                        pIRoutage.SetCustomProperty(pIFW3D.Logs, 2, "", "LOC_4", swCustomInfoType_e.swCustomInfoText, _model.WWWW.Substring(_model.WWWW.Length - 1, 1), false, "", pIGenFWConfig3D.Log, "BOX");
+                        pIRoutage.SetCustomProperty(pIFW3D.Logs, 2, "", "ANGLE", swCustomInfoType_e.swCustomInfoText, _model.Angle, false, "", pIGenFWConfig3D.Log, "BOX");
+                    }
+                    #endregion
+
+                    #region --- SELECT_CONFIGBOXFWPRT SECTION
+                    {
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SELECT_CONFIGBOX_FWPRT", pIFW3D.Sections);
+                        // Show Config BOX
+                        if (!pIRoutage.ShowConfiguration(pIFW3D.Logs, 1, "BOX", "BOX", false, "", pIGenFWConfig3D.Log))
+                        {
+                            logError($"pIRoutage.ShowConfiguration -> false");
+                            return vret = false;
+                        }
+                    }
+                    #endregion
+
+                    {
+                        string _length1 = string.Empty;
+                        string _length2 = string.Empty;
+                        string _width = string.Empty;
+                        string _angle = string.Empty;
+
+                        #region --- SET_DIMENSIONSFWPRT SECTION
+                        {
+                            pIMDI.progBar2_PerformStep();
+                            pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SET_DIMENSIONS_FWPRT", pIFW3D.Sections);
+
+                            // Capture des Dimensions à partir du fichier .INI
+                            string[] _tabSections = null;
+                            bool _getSection = getSection(pIRoutage.MyPFichierINI, "[dimensions]", out _tabSections, lineNumber());
+                            //if (!pIRoutage.GetSection(pIFW3D.Logs, 1, "Dimensions",
+                            //                            pIRoutage.MyPFichierINI, "[dimensions]",
+                            //                            out _tabSections,
+                            //                            false, "", pIGenFWConfig3D.Log))
+                            if (!_getSection)
+                            {
+                                logError($"getSection -> false");
+                                return vret = false;
+                            }
+
+                            for (int ix = 0; ix <= _tabSections.Length - 1; ix++)
+                            {
+                                pIFW3D.Dimensions_INI.Add(_tabSections[ix]);
+                            }
+
+                            pIFW3D.Length1 = _length1 = _tabSections[0].Substring(_tabSections[0].Length - (_tabSections[0].Length - "length1=".Length), _tabSections[0].Length - "length1=".Length);
+                            pIFW3D.Length2 = _length2 = _tabSections[1].Substring(_tabSections[1].Length - (_tabSections[1].Length - "length2=".Length), _tabSections[1].Length - "length2=".Length);
+                            pIFW3D.Width = _width = _tabSections[2].Substring(_tabSections[2].Length - (_tabSections[2].Length - "width=".Length), _tabSections[2].Length - "width=".Length);
+                            pIFW3D.Angle = _angle = _tabSections[3].Substring(_tabSections[3].Length - (_tabSections[3].Length - "angle=".Length), _tabSections[3].Length - "angle=".Length);
+
+                            // Angle Modified
+                            // Capture Forme Caisson / angle ..  à partir de la reference Modele :
+                            // 2H WWWW B --> Forme=H
+                            switch (_model.Shape) // Mid(modele, Len(modele) - 7, 1)
+                            {
+                                case "G":
+                                case "Q":
+                                case "J":
+                                    _angle = "45";
+                                    pIRoutage.AddLogBox(pIFW3D.Logs, 2, "Angle=" + _angle, eStatusLog.Info);
+                                    break;
+                                default:
+                                    _angle = System.Convert.ToString(System.Math.Round(GBConversion.Val(_angle), 2));
+                                    pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Angle=" + _angle, eStatusLog.Info);
+                                    break;
+                            }
+                            pIFW3D.Angle = _angle;
+                            pIRoutage.AddLogBox(pIFW3D.Logs, 4, "Angle=" + _angle, eStatusLog.Info);
+
+                            // Mise à jour des Dimensions
+                            pIMDI.progBar_PerformStep();
+                        }
+                        #endregion
+
+                        #region --- ReOrganisation Code version 2.3.0.1
+                        {
+                            // Length1
+                            if (!pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 5, "length1@skeleton", __Utils.DoubleParse(_length1), false, "", pIGenFWConfig3D.Log))
+                            {
+                                logError($"pIRoutage.SetDimensionAllConfig -> false");
+                                return vret = false;
+                            }
+
+                            // Length2
+                            if (__Utils.DoubleParse(_length2) > 0)
+                            {
+                                if (!pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 19, "length2@skeleton", __Utils.DoubleParse(_length2), false, "", pIGenFWConfig3D.Log))
+                                {
+                                    logError($"pIRoutage.SetDimensionAllConfig -> false");
+                                    return vret = false;
+                                }
+                            }
+
+                            // Width
+                            if (!pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 11, "width@skeleton", __Utils.DoubleParse(_width), false, "", pIGenFWConfig3D.Log))
+                            {
+                                logError($"pIRoutage.SetDimensionAllConfig -> false");
+                                return vret = false;
+                            }
+
+                            // Angle
+                            pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 21, "angle@skeleton", __Utils.DoubleParse(_angle), false, "", pIGenFWConfig3D.Log);
+                        }
+                        #endregion
+
+                    }
+
+                    #region --- pIRoutage.ReBuild et Mise à Jour Famille de Piece
+                    {
+                        pIRoutage.ReBuild(pIFW3D.Logs, 25, _model.Shape, false, "", pIGenFWConfig3D.Log);
+                        pIRoutage.RefreshFamille(pIFW3D.Logs, 26, _model.Shape, false, "", pIGenFWConfig3D.Log);
+                        pIRoutage.RefreshFamille(pIFW3D.Logs, 27, _model.Shape, false, "", pIGenFWConfig3D.Log);
+                        pIRoutage.RefreshFamille(pIFW3D.Logs, 28, _model.Shape, false, "", pIGenFWConfig3D.Log);
+                        pIRoutage.ReBuild(pIFW3D.Logs, 29, _model.Shape, false, "", pIGenFWConfig3D.Log);
+
+                        // pIRoutage.DeleteFamily
+                        if (!pIRoutage.DeleteFamily(pIFW3D.Logs, 30, _model.Shape, false, "", pIGenFWConfig3D.Log))
+                        {
+                            logError($"pIRoutage.DeleteFamily -> false");
+                            return vret = false;
+                        }
+
+                    }
+                    #endregion
+
+                    List<LanguetteINIProjet> _oLanguettesINIProjet = new List<LanguetteINIProjet>();
+
+                    #region --- SET_PREPAREINSERTLANGUETTES_FWPRT SECTION
+                    {
+#if _DOC_
+                //C'est le fichier INI Projet qui determine l'Insertion des languettes à l'aide des plans tongues
+                //Le pas est de 3 lignes pour chaque plan tongue dans le fichier INI Projet
+                //Les 3 premieres lignes de la Section Languettes sont liées au plane tongue 1
+                //Les 3 lignes suivantes sont liées au plane tongue 2
+                //etc ..
+                //Un bloc de 3 lignes dans le INI Projet correspond à
+                //LanguetteName1
+                //LanguetteName2
+                //côte
+                //
+                //Si les noms de languettes sont à Nothing , NotFound ou ERROR
+                //Il faut mettre en etat de suppression le plan tongue correspondant (ALL CONFIG)
+                //Sinon l'insertion des languettes est à effectuer sur le plan correspondant
+                //
+                //Est t il possible qu'il n'y est pas de languette sur le plan tongue 1 --> NON (toujours au minimum 1 languette sur le plan tongue 1
+                //
+                //Jean François peut ne pas connaitre le nom de languette .. il indique alors L0
+                //
+                //Procedure sur Insertion Detail
+                //--
+                //Scan INI Projet
+                //Scan INI Details Biblio
+                //Scan SLDLFP Details Biblio
+#endif
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SET_PREPAREINSERTLANGUETTES_FWPRT", pIFW3D.Sections);
+
+                        //Lecture / Capture des Languettes dans le INI Projet
+                        //remplissage de oLanguettesINIProjet
+                        string[] _tabSections = null;
+                        bool _getSection = getSection(pIRoutage.MyPFichierINI, "[languettes]", out _tabSections, lineNumber());
+                        //if (!pIRoutage.GetSection(pIFW3D.Logs, 2, "Languettes",
+                        //                            pIRoutage.MyPFichierINI, "[languettes]",
+                        //                            out _tabSections,
+                        //                            false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                        if (!_getSection)
+                        {
+                            pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Section [languettes] Not Found", eStatusLog.Info);
+                        }
+                        else
+                        {
+                            if (ReferenceEquals(_tabSections, null))
+                            {
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Section [languettes] Is Nothing", eStatusLog.Info);
+                            }
+                            else
+                            {
+                                // Log de la section [languettes]
+                                {
+                                    int _im = _tabSections?.Length ?? 0;
+                                    logTrace($"pIRoutage.MyPFichierINI={pIRoutage.MyPFichierINI} section:'[languettes]' _tabSections={_im}");
+                                    for (int i = 0; i < _im; i++)
+                                    {
+                                        logTrace($"    _tabSections[{i}]={_tabSections[i]}");
+                                    }
+                                }
+
+                                for (int ix = 0; ix <= _tabSections.Length - 1; ix++)
+                                {
+                                    pIFW3D.Languettes_INI.Add(_tabSections[ix]);
+                                }
+
+                                #region --- Capture des Languettes ACTIVE
+                                {
+                                    LanguetteINIProjet _languetteINIProjet = new LanguetteINIProjet();
+                                    int _lx = 0;
+                                    int _index = 0;
+                                    bool _add = false;
+                                    for (int ix = 0; ix <= _tabSections.Length - 1; ix++)
+                                    {
+                                        #region --- ix
+                                        _lx = _lx + 1;
+                                        switch (_lx)
+                                        {
+                                            case 1:
+                                                _index = _index + 1;
+                                                _languetteINIProjet = new LanguetteINIProjet();
+                                                _languetteINIProjet.Index = _index;
+                                                _languetteINIProjet.Name1 = _tabSections[ix];
+                                                break;
+
+                                            case 2:
+                                                _languetteINIProjet.Name2 = _tabSections[ix];
+                                                break;
+
+                                            case 3:
+                                                {
+                                                    string[] _args = _tabSections[ix].Split('=');
+                                                    _languetteINIProjet.CoteValue = _args.Length == 2 ? _args[1].Trim() : string.Empty;
+                                                    _languetteINIProjet.CoteName = $"gap_tongue_{_index}@plane tongue {_index}";
+                                                }
+                                                break;
+                                        }
+
+                                        if (_lx == 3)
+                                        {
+                                            #region --- Fin de Bloc 3 Lignes
+                                            // Test si Languette Presente / Ajout à la Liste des Languettes à Inserer
+                                            if (GBInformation.IsNumeric(_languetteINIProjet.CoteValue))
+                                            {
+                                                _add = true;
+                                            }
+                                            else
+                                            {
+                                                _languetteINIProjet.ErrorCote = true;
+                                                _add = false;
+                                            }
+                                            if (_add)
+                                            {
+                                                if (_languetteINIProjet.Name1 == "ERROR" 
+                                                    || _languetteINIProjet.Name1 == "Not Found" 
+                                                    || _languetteINIProjet.Name1 == "Nothing" 
+                                                    || _languetteINIProjet.Name1 == "L0")
+                                                {
+                                                    _languetteINIProjet.ErrorName1 = true;
+                                                }
+                                                if (_languetteINIProjet.Name2 == "ERROR" 
+                                                    || _languetteINIProjet.Name2 == "Not Found" 
+                                                    || _languetteINIProjet.Name2 == "Nothing" 
+                                                    || _languetteINIProjet.Name2 == "L0")
+                                                {
+                                                    _languetteINIProjet.ErrorName2 = true;
+                                                }
+                                                if (_languetteINIProjet.ErrorName1 
+                                                    && _languetteINIProjet.ErrorName2)
+                                                {
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "INI Languette.Name1=" + _languetteINIProjet.Name1 + " ..Languette.Index=" + System.Convert.ToString(_languetteINIProjet.Index), eStatusLog.Alert);
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "INI Languette.Name2=" + _languetteINIProjet.Name2 + " ..Languette.Index=" + System.Convert.ToString(_languetteINIProjet.Index), eStatusLog.Alert);
+                                                    _add = false;
+                                                }
+                                            }
+
+                                            // Erreur côte seul
+                                            if (_add && _languetteINIProjet.ErrorCote)
+                                            {
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 1, "INI Languette.côte Is Not Numeric .. Languette.Index=" + System.Convert.ToString(_languetteINIProjet.Index), eStatusLog.Alert);
+                                                _add = false;
+                                            }
+
+                                            // Check présence plan tongue
+                                            if (_add)
+                                            {
+                                                // Existence du plan tongue à l'etat Not Suppressed
+                                                if (!pIRoutage.PlanExist(pIFW3D.Logs, 1, 
+                                                    "Existence du 'plane tongue' à l'état actif", 
+                                                    $"plane tongue {_languetteINIProjet.Index}", 
+                                                    true, 
+                                                    true, 
+                                                    false, 
+                                                    "", 
+                                                    pIGenFWConfig3D.Log))
+                                                {
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "plane tongue " + System.Convert.ToString(_languetteINIProjet.Index) + " Not Found or Suppressed", eStatusLog.Alert);
+                                                    _add = false;
+                                                }
+                                            }
+
+                                            // Mise à jour côte de positionnement des Plans Tongue
+                                            if (_add)
+                                            {
+                                                if (!pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 5, 
+                                                    _languetteINIProjet.CoteName, 
+                                                    __Utils.DoubleParse(_languetteINIProjet.CoteValue), 
+                                                    false, 
+                                                    "", 
+                                                    pIGenFWConfig3D.Log))
+                                                {
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "pIRoutage.SetDimensionAllConfig ..côte=" + _languetteINIProjet.CoteName + " ..Value=" + _languetteINIProjet.CoteValue, eStatusLog.Alert);
+                                                    _add = false;
+                                                }
+                                            }
+
+                                            // Ajout à la Liste des Languettes à inserer
+                                            // / ou plans en suppressed
+                                            if (_add)
+                                            {
+                                                _oLanguettesINIProjet.Add(_languetteINIProjet);
+                                            }
+                                            else
+                                            {
+                                                // Mise à l'Etat Suppressed du plan tongue
+                                                // de l'index courant
+                                                // et des plans tongue suivant
+                                                for (int iz = _languetteINIProjet.Index; iz <= 5; iz++)
+                                                {
+                                                    if (!pIRoutage.ActivePlan(pIFW3D.Logs, 5, 
+                                                        $"Desactivation du plane tongue {iz}",
+                                                        $"plane tongue {iz}",
+                                                        false,
+                                                        true,
+                                                        false,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        // Un plan non trouvé ..
+                                                        // série de plan tongue x épuisée
+                                                        // ... interruption
+                                                        break;
+                                                    }
+                                                }
+
+                                            }
+                                            #endregion
+                                        }
+
+                                        if (_lx == 3) _lx = 0;
+                                        #endregion
+                                    }
+                                }
+                                #endregion
+
+                            }
+                        }
+
+                        bool _rebuild = pIRoutage.ReBuild(pIFW3D.Logs, 6, "pIRoutage.ReBuild Plans", false, "", pIGenFWConfig3D.Log);
+                        logTrace($"pIRoutage.ReBuild() -> {_rebuild}");
+                    }
+                    #endregion
+
+                    #region --- DELETE_ALLEQUATIONSFWPRT SECTION
+                    {
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "DELETEALL_EQUATIONS_FWPRT", pIFW3D.Sections);
+                        // Les equations sont des liens constants entre 2 dimensions
+                        // Elles peuvent être supprimées quand celles-ci ne sont plus utiles
+                        pIRoutage.DeleteAllEquation(pIFW3D.Logs, 1, "", false, "", pIGenFWConfig3D.Log);
+                    }
+                    #endregion
+
+                    #region --- SET_VIEWSFWPRT SECTION
+                    {
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SET_VIEWS_FWPRT", pIFW3D.Sections);
+                        // Affichage de la Vue déclarée dans le fichier .INI si Angle <> B
+                        // Creation aussi possible, c'est le cas ici
+                        pIRoutage.SetViews(pIFW3D.Logs, 1, "", pIRoutage.MyPFichierINI, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log);
+                    }
+                    #endregion
+
+                    //**************************************************************************************************
+                    //INSERT_LIBRARY_LANGUETTES_FWPRT SECTION
+                    //Procedure sur Insertion Detail
+                    //--
+                    //Scan INI Projet
+                    //Scan INI Details Biblio
+                    //Scan SLDLFP Details Biblio
+                    //**************************************************************************************************
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "INSERT_LIBRARY_LANGUETTES_FWPRT", pIFW3D.Sections);
+
+                    #region --- NEW VERSION
+                    {
+                        foreach (LanguetteINIProjet _languetteINIProjet in _oLanguettesINIProjet)
+                        {
+                            #region ---
+                            string _coteLanguette = string.Empty;
+
+                            List<string> _langs = new List<string>();
+                            if (!_languetteINIProjet.ErrorName1)
+                            {
+                                _langs.Add(_languetteINIProjet.Name1);
+                            }
+                            if (!_languetteINIProjet.ErrorName2)
+                            {
+                                _langs.Add(_languetteINIProjet.Name2);
+                            }
+
+                            foreach (string _lang in _langs)
+                            {
+                                #region --- foreach
+                                // Fichier Languette.INI
+                                string _path_ini = string.Empty;
+                                {
+                                    string _path = Path.ChangeExtension(Path.Combine(pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX, _lang),
+                                                                            ".ini");
+                                    bool _getFile = getFile(_path, out _path_ini, lineNumber());
+                                    //if (!pIRoutage.GetFile(pIFW3D.Logs, 4, "Languette.ini",
+                                    //    path: _path_ini,
+                                    //    false,
+                                    //    "",
+                                    //    pIGenFWConfig3D.Log))
+                                    if (!_getFile)
+                                    {
+                                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File INI Not Found : " + _path, eStatusLog.Alert);
+                                        // Alert return vret = false;
+                                    }
+                                }
+
+                                // Fichier Library SolidWorks à importer dans Fichier Pièce SLDPRT
+                                // L110.SLDLFP
+                                string _path_SLDLFP = string.Empty;
+                                {
+                                    string _path = Path.ChangeExtension(Path.Combine(_racinePDM, _pathR_BibDetails, _lang), ".SLDLFP");
+                                    bool _getFile = getFile(_path, out _path_SLDLFP, lineNumber());
+                                    //if (!pIRoutage.GetFile(pIFW3D.Logs, 5, "LibraryToInsert",
+                                    //                        _path_SLDLFP, false, "", pIGenFWConfig3D.Log))
+                                    if (!_getFile)
+                                    {
+                                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File SLDLFP Not Found : " + _path, eStatusLog.Alert);
+                                        // Alert return vret = false;
+                                    }
+                                }
+
+                                // Capture des Plans d'Integration à la Library
+                                // Lecture du fichier D:\CCS\bibliotheques\ini\L110.ini  (exemple)
+                                // [Plans]
+                                // plane external 3 - 2
+                                // plane partition 1
+                                // plane external 5F - 6
+                                // plane external 5A - 6
+                                // plane external 1
+                                // plane partition 2
+
+                                string[] _tabSectionPlans = null;
+                                bool _getSection = getSection(_path_ini, "[Plans]", out _tabSectionPlans, lineNumber());
+                                //if (!pIRoutage.GetSection(pIFW3D.Logs, 6, "Plans Languettes",
+                                //                            _path_ini, "[Plans]",
+                                //                            out _tabSectionPlans,
+                                //                            false, "", pIGenFWConfig3D.Log))
+                                if (!_getSection)
+                                {
+                                    pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Erreur getSection [Plans] : " + _path_ini, eStatusLog.Alert);
+                                    logError($"getSection -> false");
+                                    return vret = false;
+                                }
+
+                                if (ReferenceEquals(_tabSectionPlans, null))
+                                {
+                                    pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Section [Plans] is Nothing", eStatusLog.Alert);
+                                    logError($"getSection -> _tabSectionPlans==null");
+                                }
+                                else
+                                {
+                                    #region --- else
+                                    switch (_lang.Substring(0, 2))
+                                    {
+                                        case "L1":
+                                            // Incorporation de l'Index de Plan dans plane tongue X
+                                            for (int j = 0; j <= (_tabSectionPlans.Length - 1); j++)
+                                            {
+                                                if (_tabSectionPlans[j].Trim() == "plane tongue X")
+                                                {
+                                                    _tabSectionPlans[j] = "plane tongue " + System.Convert.ToString(_languetteINIProjet.Index);
+                                                }
+                                            }
+
+                                            //--
+                                            // SelectionPlans ... 1 ou plusieurs )
+                                            // Le marqueur de la fonction pIRoutage.SelectPlan doit être incrementé (j+1)
+
+                                            // Parcours des plans declarés dans L110.ini
+                                            for (int j = 0; j <= (_tabSectionPlans.Length - 1); j++)
+                                            {
+                                                #region --- j
+                                                if ((_tabSectionPlans[j]).IndexOf(" - ") + 1 > 0)
+                                                {
+                                                    //Capture Nom PLAN
+                                                    string bonPlan = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" - ") + 0);
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 10, "L1 BonPlan=" + bonPlan, eStatusLog.Info);
+                                                    //Selection PLAN
+                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 11, "L1", bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                    {
+                                                        //Capture Nom PLAN
+                                                        int k = (_tabSectionPlans[j]).IndexOf(" ") + 1;
+                                                        while ((_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1 < (_tabSectionPlans[j]).IndexOf(" - ") + 1)
+                                                        {
+                                                            k = (_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1;
+                                                        }
+                                                        bonPlan = _tabSectionPlans[j].Substring(0, k);
+                                                        k = (_tabSectionPlans[j]).IndexOf(" - ") + 1;
+                                                        if ((k + 1).ToString().IndexOf(_tabSectionPlans[j]) + 1 > 0)
+                                                        {
+                                                            bonPlan = bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1, GBStrings.InStr(k + 1, _tabSectionPlans[j], " - ") - k - 3);
+                                                        }
+                                                        else
+                                                        {
+                                                            bonPlan = bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1, _tabSectionPlans[j].Length - 3);
+                                                        }
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 12, "L1 BonPlan=" + bonPlan, eStatusLog.Info);
+                                                        //Selection PLAN
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 12, "L1", bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                        {
+                                                            logError($"pIRoutage.SelectPlan -> false");
+                                                            return vret = false;
+                                                        }
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    // Capture Nom PLAN
+                                                    string bonPlan = _tabSectionPlans[j];
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 11, "L1 BonPlan=" + bonPlan, eStatusLog.Info);
+                                                    // Selection PLAN
+                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 11, "L1",
+                                                        bonPlan,
+                                                        Marqueur: j,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectPlan -> false");
+                                                        return vret = false;
+                                                    }
+                                                }
+                                                #endregion
+                                            }
+
+                                            #region --- pIRoutage.InsertLibrary
+                                            {
+                                                //string _libraryPath = _racinePDM + _pathR_BibDetails + "\\" + _lang + ".SLDLFP";
+                                                string _libraryPath = Path.ChangeExtension(Path.Combine(_racinePDM, _pathR_BibDetails, _lang), ".SLDLFP");
+                                                if (!pIRoutage.InsertLibrary(pIFW3D.Logs, 13,
+                                                    "L1",
+                                                    _libraryPath,
+                                                    out _libraryName,
+                                                    false, "",
+                                                    pIGenFWConfig3D.Log))
+                                                {
+                                                    logError($"pIRoutage.InsertLibrary -> false");
+                                                    return vret = false;
+                                                }
+
+                                                pIFW3D.LanguettesInserted.Add(_libraryPath);
+                                                pIRoutage.MoveFunction(pIFW3D.Logs, 14, "L1", _libraryName, "Languette", false, "", pIGenFWConfig3D.Log, true);
+                                            }
+                                            #endregion
+
+                                            pIRoutage.DeleteAllEquation(pIFW3D.Logs, 15, "L1", false, "", pIGenFWConfig3D.Log);
+                                            pIRoutage.ReBuild(pIFW3D.Logs, 16, "L1", false, "", pIGenFWConfig3D.Log);
+
+                                            break;
+
+                                        case "L2":
+                                            // Incorporation de l'Index de Plan dans plane tongue X
+                                            for (int j = 0; j <= (_tabSectionPlans.Length - 1); j++)
+                                            {
+                                                if (_tabSectionPlans[j].Trim() == "plane tongue X")
+                                                {
+                                                    _tabSectionPlans[j] = "plane tongue " + System.Convert.ToString(_languetteINIProjet.Index);
+                                                }
+                                            }
+
+                                            for (int j = 0; j <= 2; j++)
+                                            {
+                                                #region --- j
+                                                if ((_tabSectionPlans[j]).IndexOf("6") + 1 > 0)
+                                                {
+                                                    switch (_coteLanguette)
+                                                    {
+                                                        case "LR":
+                                                            {
+                                                                // SelectPlan
+                                                                string _planeToInsert = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0);
+                                                                if (!pIRoutage.SelectPlan(pIFW3D.Logs, 18, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                                {
+                                                                    logError($"pIRoutage.SelectPlan -> false");
+                                                                    return vret = false;
+                                                                }
+                                                            }
+                                                            break;
+                                                        default:
+                                                            if (_tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (
+                                                                    _tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0).Substring(_tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (
+                                                                    _tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0).Length - 1, 1) == _coteLanguette.Substring(0, 1))
+                                                            {
+                                                                // pIRoutage.SelectPlan
+                                                                string _planeToInsert = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0);
+                                                                if (!pIRoutage.SelectPlan(pIFW3D.Logs, 19, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                                {
+                                                                    logError($"pIRoutage.SelectPlan -> false");
+                                                                    return vret = false;
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                // pIRoutage.SelectPlan
+                                                                string _planeToInsert = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 1) + "6";
+                                                                if (!pIRoutage.SelectPlan(pIFW3D.Logs, 20, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                                {
+                                                                    logError($"pIRoutage.SelectPlan -> false");
+                                                                    return vret = false;
+                                                                }
+                                                            }
+                                                            break;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    // SelectionPlan
+                                                    string _planeToInsert = _tabSectionPlans[j];
+                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 21, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectPlan -> false");
+                                                        return vret = false;
+                                                    }
+                                                }
+                                                #endregion
+                                            }
+
+                                            for (int j = 3; j <= (_tabSectionPlans.Length - 1); j++)
+                                            {
+                                                #region --- j
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 24, "L2 SectionPlan(" + System.Convert.ToString(j) + ")=" + _tabSectionPlans[j], eStatusLog.Info);
+                                                if ((_tabSectionPlans[j]).IndexOf("6") + 1 > 0)
+                                                {
+                                                    switch (_coteLanguette)
+                                                    {
+                                                        case "LR":
+                                                            // SelectionPlan
+                                                            string _planeToInsert = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0);
+                                                            if (!pIRoutage.SelectPlan(pIFW3D.Logs, 26, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                            {
+                                                                logError($"pIRoutage.SelectPlan -> false");
+                                                                return vret = false;
+                                                            }
+                                                            break;
+
+                                                        default:
+                                                            {
+                                                                string _strA = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0).Substring(_tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0).Length - 1, 1);
+                                                                string _strB = _coteLanguette.Substring(0, 1);
+                                                                if (_strA == _strB)
+                                                                {
+                                                                    // SelectionPlan
+                                                                    _planeToInsert = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 2 - 1) + 0);
+                                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 27, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                                    {
+                                                                        logError($"pIRoutage.SelectPlan -> false");
+                                                                        return vret = false;
+                                                                    }
+                                                                }
+                                                                else
+                                                                {
+                                                                    // SelectionPlan
+                                                                    _planeToInsert = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" ", (_tabSectionPlans[j]).IndexOf(" ") + 2 - 1) + 1) + "6";
+                                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 28, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                                    {
+                                                                        logError($"pIRoutage.SelectPlan -> false");
+                                                                        return vret = false;
+                                                                    }
+                                                                }
+                                                            }
+                                                            break;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    // SelectionPlan
+                                                    string _planeToInsert = _tabSectionPlans[j];
+                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 29, "L2", _planeToInsert, j, false, "", pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectPlan -> false");
+                                                        return vret = false;
+                                                    }
+                                                }
+                                                #endregion
+                                            }
+
+                                            #region --- InsererFonctionLibrairie
+                                            {
+                                                // string _libraryPath = _racinePDM + _pathR_BibDetails + "\\" + _lang + ".SLDLFP";
+                                                string _libraryPath = Path.ChangeExtension(Path.Combine(_racinePDM, _pathR_BibDetails, _lang), ".SLDLFP");
+
+                                                if (!pIRoutage.InsertLibrary(pIFW3D.Logs, 30,
+                                                    "L2",
+                                                    _libraryPath,
+                                                    out _libraryName,
+                                                    false,
+                                                    "",
+                                                    pIGenFWConfig3D.Log))
+                                                {
+                                                    logError($"pIRoutage.InsertLibrary(_libraryPath='{_libraryPath}')");
+                                                    return vret = false;
+                                                }
+                                                else
+                                                {
+                                                    pIFW3D.LanguettesInserted.Add(_libraryPath);
+                                                    pIRoutage.MoveFunction(pIFW3D.Logs, 31, "L2", _libraryName, "Languette", false, "", pIGenFWConfig3D.Log, true);
+                                                }
+                                            }
+                                            #endregion
+
+                                            pIRoutage.DeleteAllEquation(pIFW3D.Logs, 32, "L2", false, "", pIGenFWConfig3D.Log);
+                                            pIRoutage.ReBuild(pIFW3D.Logs, 33, "L2", false, "", pIGenFWConfig3D.Log);
+
+                                            break;
+                                    }
+
+                                    //If Regex.IsMatch(ININame, "[A-Z][0-9]{3}_[A-Z]?[0-9](J|Q)") Then
+                                    if (Regex.IsMatch(ININame, GenBoxConstants.Get_Project + GenBoxConstants.Get_Form + "(J|Q)"))
+                                    {
+                                        string _sketchName = string.Empty;
+                                        if (pIRoutage.SearchSubFeature(pIFW3D.Logs, 34, "Languette",
+                                            out _sketchName,
+                                            _libraryName, // TBC : d'où vient la valeur de _libraryName
+                                            "trajectory_up",
+                                            "trajectory",
+                                            false,
+                                            null,
+                                            pIGenFWConfig3D.Log))
+                                        {
+                                            if (pIFW3D.Modele.Split(" ".ToCharArray())[1].EndsWith("WT"))
+                                            {
+                                                _sketchName = "gap_XR@" + _sketchName;
+                                            }
+                                            else if (pIFW3D.Modele.Split(" ".ToCharArray())[1].EndsWith("TW"))
+                                            {
+                                                _sketchName = "gap_XL@" + _sketchName;
+                                            }
+
+                                            if (!pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 35, _sketchName, 3, false, "", pIGenFWConfig3D.Log))
+                                            {
+                                                if (pIGenFWConfig3D.Version == eVersion.Evolution)
+                                                {
+                                                    logError($"pIGenFWConfig3D.Version == eVersion.Evolution");
+                                                    return vret = false;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                pIRoutage.ReBuild(pIFW3D.Logs, 33, "L2", false, "", pIGenFWConfig3D.Log);
+                                            }
+
+                                        }
+                                    }
+
+                                    #endregion
+                                }
+
+                                #endregion
+                            }
+                            #endregion
+                        }
+                    }
+                    #endregion
+
+                    // return true; // TMP : pas de partition
+
+                    #region --- INSERT_LIBRARY_GOUTTIERES_FWPRT SECTION
+                    {
+                        // Procedure sur Insertion Detail
+                        // Scan INI Projet
+                        // Scan INI Details Biblio
+                        // Scan SLDLFP Details Biblio
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "INSERT_LIBRARY_GOUTTIERES_FWPRT", pIFW3D.Sections);
+                    }
+                    #endregion
+
+                    {
+                        dynamic _tabListeCoteVariables = null;
+
+                        #region --- Capture  Section Gouttieres INI PROJET
+                        {
+                            string[] _tabSections = null;
+                            bool _getSection = getSection(pIRoutage.MyPFichierINI, "[gouttieres]", out _tabSections, lineNumber());
+                            //if (!pIRoutage.GetSection(pIFW3D.Logs, 1, "Gouttieres",
+                            //                            pIRoutage.MyPFichierINI, "[gouttieres]",
+                            //                            out _tabSections,
+                            //                            false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                            if (!_getSection)
+                            {
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Section [gouttieres] Not Found", eStatusLog.Info);
+                                logError($"getSection -> false");
+                            }
+                            else
+                            {
+                                #region --- else 
+                                if (ReferenceEquals(_tabSections, null))
+                                {
+                                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Section [gouttieres] Is Nothing", eStatusLog.Info);
+                                }
+                                else
+                                {
+                                    for (int ix = 0; ix < _tabSections.Length; ix++)
+                                    {
+                                        pIFW3D.Gouttieres_INI.Add(_tabSections[ix]);
+                                    }
+
+                                    for (int i = 0; i < _tabSections.Length; i += 2)
+                                    {
+                                        #region --- i
+                                        if (_tabSections[i] != "ERROR" && _tabSections[i] != "Not Found")
+                                        {
+                                            // string str1 = pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX + "\\" + _tabSections[i];
+                                            string _path_ini = string.Empty;
+                                            {
+                                                string _path = Path.ChangeExtension(Path.Combine(pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX,
+                                                                                                _tabSections[i]),
+                                                                                    ".ini");
+                                                bool _getFile = getFile(_path, out _path_ini, lineNumber());
+                                                //bool _getFile = pIRoutage.GetFile(pIFW3D.Logs, 3, "",
+                                                //                                    _path_ini,
+                                                //                                    false, "", pIGenFWConfig3D.Log);
+                                                logTrace($"_tabSections[{i}]={_tabSections[i]}");
+                                                logTrace($"     _path_ini={_path_ini}");
+                                                logTrace($"     _getFile={_getFile}");
+                                                if (!_getFile)
+                                                {
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File INI Details Not Found : " + _path, eStatusLog.Alert);
+                                                    return vret = false;
+                                                }
+                                            }
+
+                                            {
+                                                //str1 = _racinePDM + _pathR_BibDetails + "\\" + _tabSections[i];
+                                                string _path_SLDLFP = string.Empty;
+                                                string _path = Path.ChangeExtension(Path.Combine(_racinePDM,
+                                                                                                        _pathR_BibDetails,
+                                                                                                        _tabSections[i]),
+                                                                                           ".SLDLFP");
+                                                bool _getFile = getFile(_path, out _path_SLDLFP, lineNumber());
+                                                //bool _getFile = pIRoutage.GetFile(pIFW3D.Logs, 8, "",
+                                                //                                    _path_SLDLFP,
+                                                //                                    false, "", pIGenFWConfig3D.Log);
+
+                                                logTrace($"_tabSections[{i}]={_tabSections[i]}");
+                                                logTrace($"     _path={_path}");
+                                                logTrace($"     _getFile={_getFile}");
+                                                logTrace($"     -> _path_SLDLFP={_path_SLDLFP}");
+                                                logTrace($"     _racinePDM={_racinePDM}");
+                                                logTrace($"     _pathR_BibDetails={_pathR_BibDetails}");
+
+                                                if (!_getFile)
+                                                {
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File SLDLFP Not Found : " + _path_SLDLFP, eStatusLog.Alert);
+                                                    return vret = false;
+                                                }
+
+                                                {
+                                                    string[] _tabSectionPlans = null;
+                                                    // str1 = pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX + "\\" + _tabSections[i];
+
+                                                    bool __getSection = getSection(_path_ini, "[Plans]", out _tabSectionPlans, lineNumber());
+                                                    //bool __getSection = pIRoutage.GetSection(pIFW3D.Logs, 9, "Plans Gouttieres",
+                                                    //                            _path_ini, "[Plans]",
+                                                    //                            out _tabSectionPlans,
+                                                    //                            false, "", pIGenFWConfig3D.Log);
+                                                    if (!__getSection)
+                                                    {
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Erreur getSection [Plans] : " + _path_ini, eStatusLog.Alert);
+                                                        logError($"getSection -> false");
+                                                        return vret = false;
+                                                    }
+
+                                                    if (ReferenceEquals(_tabSectionPlans, null))
+                                                    {
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Section [Plans] is Nothing", eStatusLog.Alert);
+                                                        logError($"getSection -> _tabSectionPlans == null");
+                                                    }
+                                                    else
+                                                    {
+                                                        #region --- else
+
+                                                        // DeSelect
+                                                        pIRoutage.DeSelect(pIFW3D.Logs, 10, "", false, "", pIGenFWConfig3D.Log);
+                                                        for (int j = 0; j < _tabSectionPlans.Length; j++)
+                                                        {
+                                                            #region --- j
+                                                            string _tabSectionPlansj = _tabSectionPlans[j];
+                                                            if (string.IsNullOrEmpty(_tabSectionPlansj)) continue;
+
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs,
+                                                                11,
+                                                                $"SectionPlan({j})={_tabSectionPlansj}",
+                                                                eStatusLog.Info);
+
+                                                            // SelectPlan
+                                                            if (!pIRoutage.SelectPlan(pIFW3D.Logs, 12, "",
+                                                                _tabSectionPlansj,
+                                                                j,
+                                                                false,
+                                                                eKeyRun.OnAlertSuccessReturnFalse.ToString(),
+                                                                pIGenFWConfig3D.Log))
+                                                            {
+                                                                // TBC bonPlan = _TabSectionPlansj.Substring(0, _TabSectionPlansj.IndexOf(" - "));
+                                                                string _bonPlan = string.Empty;
+                                                                int _index = _tabSectionPlansj.IndexOf(" - ");
+                                                                if (_index >= 0)
+                                                                {
+                                                                    _bonPlan = _tabSectionPlansj.Substring(0, _index);
+                                                                }
+                                                                else
+                                                                {
+                                                                    _bonPlan = _tabSectionPlansj; // TBC
+                                                                }
+
+                                                                // SelectPlan
+                                                                if (!pIRoutage.SelectPlan(pIFW3D.Logs, 13, "", _bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                                {
+                                                                    //bonPlan = _TabSectionPlansj.Substring(0, _TabSectionPlansj.IndexOf(" - ") - 2);
+                                                                    //bonPlan = bonPlan + " " + _TabSectionPlansj.Substring(_TabSectionPlansj.IndexOf(" - ") + 4 - 1, 1);
+
+                                                                    if (_index >= 2)
+                                                                    {
+                                                                        _bonPlan = _tabSectionPlansj.Substring(0, _index - 2);
+                                                                        _bonPlan = _bonPlan + " " + _tabSectionPlansj.Substring(_tabSectionPlansj.IndexOf(" - ") + 4 - 1, 1);
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        _bonPlan = _tabSectionPlansj; // TBC
+                                                                    }
+
+                                                                    // SelectPlan
+                                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 14, "",
+                                                                        _bonPlan,
+                                                                        j,
+                                                                        false,
+                                                                        "",
+                                                                        pIGenFWConfig3D.Log))
+                                                                    {
+
+                                                                    }
+                                                                }
+
+                                                            }
+
+                                                            #endregion
+                                                        }
+
+                                                        // DeleteAllEquation
+                                                        pIRoutage.DeleteAllEquation(pIFW3D.Logs, 15, "", false, "", pIGenFWConfig3D.Log);
+
+                                                        // InsertLibrary
+                                                        {
+                                                            if (!pIRoutage.InsertLibrary(pIFW3D.Logs, 16, "",
+                                                                _path_SLDLFP,
+                                                                out _libraryName,
+                                                                false,
+                                                                "",
+                                                                pIGenFWConfig3D.Log))
+                                                            {
+                                                                logError($"pIRoutage.InsertLibrary('{_path_SLDLFP}') -> false");
+                                                                return vret = false;
+                                                            }
+                                                            else
+                                                            {
+                                                                pIFW3D.GouttieresInserted.Add(_path_SLDLFP);
+                                                            }
+                                                        }
+
+                                                        // ReBuild
+                                                        pIRoutage.ReBuild(pIFW3D.Logs, 17, "", false, "", pIGenFWConfig3D.Log);
+
+                                                        // DeSelect
+                                                        pIRoutage.DeSelect(pIFW3D.Logs, 18, "", false, "", pIGenFWConfig3D.Log);
+
+                                                        // _texteCote
+                                                        string _texteCote = "";
+                                                        try
+                                                        {
+                                                            _texteCote = _tabSections[i + 1].Substring(_tabSections[i + 1].Length - (_tabSections[i + 1].Length - 5), _tabSections[i + 1].Length - 5);
+                                                        }
+                                                        catch
+                                                        {
+                                                            _texteCote = string.Empty;
+                                                        }
+
+                                                        if (!GBInformation.IsNumeric(_texteCote))
+                                                        {
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs, 43, "côte Is Not Numeric ..côte=" + _texteCote, eStatusLog.Info);
+                                                        }
+                                                        else
+                                                        {
+                                                            if (pIRoutage.GetLibraryDimension(pIFW3D.Logs, 20, "",
+                                                                _libraryName,
+                                                                out _tabListeCoteVariables,
+                                                                false,
+                                                                "",
+                                                                pIGenFWConfig3D.Log))
+                                                            {
+                                                                if (_tabListeCoteVariables != null && _tabListeCoteVariables.Count > 0)
+                                                                {
+                                                                    pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 21,
+                                                                        _tabListeCoteVariables[0],
+                                                                        GBConversion.Val(_texteCote.Replace(",", ".")),
+                                                                        false,
+                                                                        "",
+                                                                        pIGenFWConfig3D.Log);
+                                                                }
+                                                            }
+                                                        }
+
+                                                        pIRoutage.MoveFunction(pIFW3D.Logs, 22, "", _libraryName, "Gouttière", false, "", pIGenFWConfig3D.Log, true);
+                                                        pIRoutage.ReBuild(pIFW3D.Logs, 23, "", false, "", pIGenFWConfig3D.Log);
+                                                        pIRoutage.DeleteAllEquation(pIFW3D.Logs, 24, "", false, "", pIGenFWConfig3D.Log);
+                                                        pIRoutage.ReBuild(pIFW3D.Logs, 25, "", false, "", pIGenFWConfig3D.Log);
+                                                        #endregion
+                                                    }
+
+                                                }
+                                            }
+                                        }
+                                        #endregion
+                                    }
+                                }
+                                #endregion
+                            }
+                        }
+                        #endregion
+
+                        #region --- TENONS (Insertion)
+                        {
+                            //Procedure sur Insertion Detail
+                            //--
+                            //Scan INI Projet
+                            //Scan INI Details Biblio
+                            //Scan SLDLFP Details Biblio
+                            //**************************************************************************************************
+                            pIMDI.progBar2_PerformStep();
+                            pIRoutage.AddLogBoxSection(pIFW3D.Logs, "INSERT_LIBRARY_TENONS_FWPRT", pIFW3D.Sections);
+                        }
+                        #endregion
+
+                        #region --- Capture des Details dans Nxxx\FW\INI du fichier INIProjet.ini
+                        {
+                            string[] _tabSections = null;
+                            bool _getSection = getSection(pIRoutage.MyPFichierINI, "[tenons]", out _tabSections, lineNumber());
+                            //if (!pIRoutage.GetSection(pIFW3D.Logs, 2, "Tenons",
+                            //                            pIRoutage.MyPFichierINI, "[tenons]",
+                            //                            out _tabSections,
+                            //                            false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                            if (!_getSection)
+                            {
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Section [tenons] Not Found", eStatusLog.Info);
+                                logError($"getSection -> false");
+                            }
+                            else
+                            {
+                                #region --- else
+                                if (ReferenceEquals(_tabSections, null))
+                                {
+                                    pIRoutage.AddLogBox(pIFW3D.Logs, 1, "Section [tenons] Is Nothing", eStatusLog.Info);
+                                    logError($"getSection -> _tabSections == NULL");
+                                }
+                                else
+                                {
+                                    #region --- else
+                                    for (int ix = 0; ix < _tabSections.Length; ix++)
+                                    {
+                                        pIFW3D.Tenons_INI.Add(_tabSections[ix]);
+                                    }
+                                    for (int i = 0; i < _tabSections.Length; i += 2)
+                                    {
+                                        #region --- i
+                                        // DeSelect
+                                        pIRoutage.DeSelect(pIFW3D.Logs, 4, "", false, "", pIGenFWConfig3D.Log);
+                                        if (_tabSections[i] != "ERROR" && _tabSections[i] != "Not Found" && _tabSections[i] != "T0")
+                                        {
+                                            // Fichier INI Details contenant les plans d'Insertion nécessaires à la librairie SLDLFP
+                                            string _path_ini = string.Empty;
+                                            string _path = Path.ChangeExtension(Path.Combine(pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX, _tabSections[i]),
+                                                                            ".ini");
+                                            bool _getFile = getFile(_path, out _path_ini, lineNumber());
+                                            //if (!pIRoutage.GetFile(pIFW3D.Logs, 19, "", _path_ini, false, "", pIGenFWConfig3D.Log))
+                                            if (!_getFile)
+                                            {
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File INI Details Not Found : " + _path, eStatusLog.Alert);
+                                                return vret = false;
+                                            }
+                                            else
+                                            {
+                                                #region --- else
+                                                // Fichier SLDLFP Librairie à inserer
+                                                string _path_SLDLFP = string.Empty;
+                                                string __path = Path.ChangeExtension(Path.Combine(_racinePDM, _pathR_BibDetails, _tabSections[i]),
+                                                                                            ".SLDLFP");
+                                                bool __getFile = getFile(__path, out _path_SLDLFP, lineNumber());
+                                                // if (!pIRoutage.GetFile(pIFW3D.Logs, 20, "", _path_SLDLFP, false, "", pIGenFWConfig3D.Log))
+                                                if (!__getFile)
+                                                {
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File SLDLFP Not Found : " + __path, eStatusLog.Alert);
+                                                    // Alert return vret = false;
+                                                }
+                                                else
+                                                {
+                                                    #region --- else
+                                                    string[] _tabSectionPlans = null;
+                                                    // Capture Section [Plans]
+                                                    // str1 = pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX + "\\" + _tabSections[i];
+
+                                                    bool __getSection = getSection(_path_ini, "[Plans]", out _tabSectionPlans, lineNumber());
+                                                    //if (!pIRoutage.GetSection(pIFW3D.Logs, 21, "Plans Tenons Model",
+                                                    //                            _path_ini, "[Plans]",
+                                                    //                            out _tabSectionPlans,
+                                                    //                            false, "", pIGenFWConfig3D.Log))
+                                                    if (!__getSection)
+                                                    {
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Erreur getSection [Plans] : " + _path_ini, eStatusLog.Alert);
+                                                        return vret = false;
+                                                    }
+                                                    else
+                                                    {
+                                                        if (ReferenceEquals(_tabSectionPlans, null))
+                                                        {
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs, 3, "Section [Plans] is Nothing", eStatusLog.Alert);
+                                                        }
+                                                        else
+                                                        {
+                                                            #region --- else
+                                                            // DeSelect
+                                                            pIRoutage.DeSelect(pIFW3D.Logs, 22, "", false, "", pIGenFWConfig3D.Log);
+                                                            for (int j = 0; j <= (_tabSectionPlans.Length - 1); j++)
+                                                            {
+                                                                pIRoutage.AddLogBox(pIFW3D.Logs, 23, "SectionPlan(" + System.Convert.ToString(j) + ")=" + _tabSectionPlans[j], eStatusLog.Info);
+                                                                if ((_tabSectionPlans[j]).IndexOf(" - ") + 1 > 0)
+                                                                {
+                                                                    string _bonPlan = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" - ") + 0);
+                                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 24, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                                    // SelectPlan
+                                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 25, "", _bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                                    {
+                                                                        int k = (_tabSectionPlans[j]).IndexOf(" ") + 1;
+                                                                        while ((_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1 < (_tabSectionPlans[j]).IndexOf(" - ") + 1)
+                                                                        {
+                                                                            k = (_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1;
+                                                                        }
+                                                                        _bonPlan = _tabSectionPlans[j].Substring(0, k);
+                                                                        k = (_tabSectionPlans[j]).IndexOf(" - ") + 1;
+                                                                        if ((_tabSectionPlans[j]).IndexOf(" - ", k + 1 - 1) + 1 > 0)
+                                                                        {
+                                                                            _bonPlan = _bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1, GBStrings.InStr(k + 1, _tabSectionPlans[j], " - ") - k - 3);
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            _bonPlan = _bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1, _tabSectionPlans[j].Length);
+                                                                        }
+                                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 26, "BonPlan=" + _bonPlan, eStatusLog.Info);
+
+                                                                        // SelectPlan
+                                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 27, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                                        {
+                                                                            logError($"pIRoutage.SelectPlan -> false");
+                                                                            return vret = false;
+                                                                        }
+                                                                    }
+                                                                }
+                                                                else
+                                                                {
+                                                                    string _bonPlan = _tabSectionPlans[j];
+                                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 28, "BonPlan=" + _bonPlan, eStatusLog.Info);
+
+                                                                    // SelectPlan
+                                                                    if (!pIRoutage.SelectPlan(pIFW3D.Logs, 29, "", _bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                                    {
+                                                                        _bonPlan = _bonPlan.Substring(0, _bonPlan.IndexOf(" ", _bonPlan.IndexOf(" ") + 2 - 1) + 1) + "6";
+                                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 30, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                                        // SelectPlan
+                                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 30, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                                        {
+                                                                            logError($"pIRoutage.SelectPlan -> false");
+                                                                            return vret = false;
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // DeleteAllEquation
+                                                            pIRoutage.DeleteAllEquation(pIFW3D.Logs, 31, "", false, "", pIGenFWConfig3D.Log);
+
+                                                            // InsertLibrary
+                                                            if (!pIRoutage.InsertLibrary(pIFW3D.Logs, 32, "",
+                                                                _path_SLDLFP,
+                                                                out _libraryName,
+                                                                false,
+                                                                "",
+                                                                pIGenFWConfig3D.Log))
+                                                            {
+                                                                logError($"pIRoutage.InsertLibrary -> false");
+                                                                return vret = false;
+                                                            }
+
+                                                            pIFW3D.TenonsInserted.Add(_path_SLDLFP);
+
+                                                            pIRoutage.DeSelect(pIFW3D.Logs, 33, "", false, "", pIGenFWConfig3D.Log);
+                                                            pIRoutage.ReBuild(pIFW3D.Logs, 37, "", false, "", pIGenFWConfig3D.Log);
+                                                            pIRoutage.MoveFunction(pIFW3D.Logs, 38, "", _libraryName, "Tenon", false, "", pIGenFWConfig3D.Log, true);
+                                                            pIRoutage.DeleteAllEquation(pIFW3D.Logs, 39, "", false, "", pIGenFWConfig3D.Log);
+
+                                                            // Select Tenon
+                                                            if ((_tabSections[i]).IndexOf("215") + 1 > 0)
+                                                            {
+                                                                string olr = "";
+                                                            }
+
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs, 40,
+                                                                "Select Tenon 115, 135, 215, 235  .. Section(" + System.Convert.ToString(i) + ")=" + _tabSections[i],
+                                                                eStatusLog.Info);
+
+                                                            if ((_tabSections[i]).IndexOf("115") + 1 > 0
+                                                                || (_tabSections[i]).IndexOf("135") + 1 > 0
+                                                                || (_tabSections[i]).IndexOf("215") + 1 > 0
+                                                                || (_tabSections[i]).IndexOf("235") + 1 > 0)
+                                                            {
+                                                                string[] _nomRef = null;
+                                                                string[] _typeRef = null;
+
+                                                                // GetFolderContents
+                                                                if (!pIRoutage.GetFolderContents(pIFW3D.Logs, 41, "",
+                                                                    "Tenon",
+                                                                    out _nomRef,
+                                                                    out _typeRef,
+                                                                    false,
+                                                                    "",
+                                                                    pIGenFWConfig3D.Log))
+                                                                {
+                                                                    if (!ReferenceEquals(_nomRef, null))
+                                                                    {
+                                                                        for (int j = 0; j <= _nomRef.Length - 1; j++)
+                                                                        {
+                                                                            pIRoutage.AddLogBox(pIFW3D.Logs,
+                                                                                42,
+                                                                                "Select LibraryFeature  NomRef(" + System.Convert.ToString(j) + ")=" + _nomRef[j],
+                                                                                eStatusLog.Info);
+
+                                                                            if (_typeRef[j] == "LibraryFeature"
+                                                                                && (_nomRef[j]).IndexOf(_tabSections[i]) + 1 > 0)
+                                                                            {
+                                                                                // _libraryNamej
+                                                                                string _libraryNamej = _nomRef[j];
+                                                                                pIRoutage.AddLogBox(pIFW3D.Logs, 43, "LibraryName=" + _libraryNamej, eStatusLog.Info);
+
+                                                                                // _texteCote
+                                                                                string _texteCote = _tabSections[i + 1].Substring(_tabSections[i + 1].Length - (_tabSections[i + 1].Length - 5), _tabSections[i + 1].Length - 5);
+                                                                                pIRoutage.AddLogBox(pIFW3D.Logs, 44, "TexteCote=" + _texteCote, eStatusLog.Info);
+                                                                                if (!GBInformation.IsNumeric(_texteCote))
+                                                                                {
+                                                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 43, "côte Is Not Numeric ..côte=" + _texteCote, eStatusLog.Alert);
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    // GetLibraryDimension
+                                                                                    if (pIRoutage.GetLibraryDimension(pIFW3D.Logs, 45, "",
+                                                                                        _libraryNamej,
+                                                                                        out _tabListeCoteVariables,
+                                                                                        false,
+                                                                                        "",
+                                                                                        pIGenFWConfig3D.Log))
+                                                                                    {
+                                                                                        pIRoutage.SetDimensionAllConfig(pIFW3D.Logs, 46, _tabListeCoteVariables[0], GBConversion.Val(_texteCote.Replace(",", ".")), false, "", pIGenFWConfig3D.Log);
+                                                                                    }
+                                                                                }
+                                                                                pIRoutage.ReBuild(pIFW3D.Logs, 47, "", false, "", pIGenFWConfig3D.Log);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            #endregion
+                                                        }
+                                                    }
+                                                    #endregion
+                                                }
+                                                #endregion
+                                            }
+                                        }
+                                        #endregion
+                                    }
+                                    #endregion
+                                }
+                                #endregion
+                            }
+                        }
+                        #endregion
+                    }
+
+                    // return true; // TMP : pas de partition
+
+                    #region --- FEUILLURES (Insertion)
+                    {
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "INSERT_LIBRARY_FEUILLURES_FWPRT", pIFW3D.Sections);
+
+                        // ReBuild
+                        pIRoutage.ReBuild(pIFW3D.Logs, 1, "", false, "", pIGenFWConfig3D.Log);
+
+                        string[] _tabSections = null;
+                        #region --- pIRoutage.GetSection [Feuillures] -> _tabSections
+                        {
+                            bool _getSection = getSection(pIRoutage.MyPFichierINI, "[Feuillures]", out _tabSections, lineNumber());
+                            //bool _getSection = pIRoutage.GetSection(pIFW3D.Logs, 2, "Feuillures",
+                            //                            pIRoutage.MyPFichierINI, "[Feuillures]",
+                            //                            out _tabSections,
+                            //                            false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log);
+                            if (_getSection && _tabSections != null)
+                            {
+                                for (int ix = 0; ix < _tabSections.Length; ix++)
+                                {
+                                    pIFW3D.Feuillures_INI.Add(_tabSections[ix]);
+                                }
+                            }
+                        }
+                        #endregion
+
+                        #region --- _tabSections
+                        {
+                            int _languetteEncour = 0;
+                            for (int i = 0; i < _tabSections.Length; i += 2)
+                            {
+                                #region --- i
+                                string _tabSectioni = _tabSections[i];
+
+                                int __languetteEncour = _languetteEncour++;
+                                int _iNbrPlanNS = 0; // TBC
+                                bool _direction = false; // TBC
+
+                                pIRoutage.AddLogBox(pIFW3D.Logs, 3, $"Section({i})={_tabSectioni}", eStatusLog.Info);
+                                logTrace($"Section({i})={_tabSectioni}");
+
+                                if (string.Compare(_tabSectioni, "ERROR", true) == 0
+                                    || string.Compare(_tabSectioni, "Nothing", true) == 0) continue;
+
+                                string _path_ini = string.Empty;
+
+                                #region --- _path_ini
+                                {
+                                    string _path = Path.ChangeExtension(Path.Combine(pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX,
+                                                                                        _tabSectioni),
+                                                                            ".ini");
+                                    logTrace($"     pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX={pIxDYN.MyParamNXXX.RepINIDetailsPlansNXXX}");
+                                    logTrace($"     _tabSectioni={_tabSectioni}");
+
+                                    {
+                                        // bool _getFile = pIRoutage.GetFile(pIFW3D.Logs, 4, "", _path_ini, false, "", pIGenFWConfig3D.Log);
+                                        bool _getFile = getFile(_path, out _path_ini, lineNumber());
+                                        if (!_getFile)
+                                        {
+                                            pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File INI Details Not Found : " + _path, eStatusLog.Alert);
+                                            // Alert return vret = false;
+                                        }
+                                    }
+                                }
+                                #endregion
+
+                                #region --- _path_SLDLFP
+                                {
+                                    string _path_SLDLFP = string.Empty;
+                                    {
+                                        string _path = Path.ChangeExtension(Path.Combine(_racinePDM, _pathR_BibDetails, _tabSectioni),
+                                                                                ".SLDLFP"); ;
+                                        logTrace($"_path_SLDLFP={_path} Exists={File.Exists(_path)}");
+                                        logTrace($"     _racinePDM={_racinePDM}");
+                                        logTrace($"     _pathR_BibDetails={_pathR_BibDetails}");
+                                        logTrace($"     _tabSectioni={_tabSectioni}");
+
+                                        bool _getFile = getFile(_path, out _path_SLDLFP, lineNumber());
+                                        //bool _getFile = pIRoutage.GetFile(pIFW3D.Logs, 5, "", _path_SLDLFP, false, "", pIGenFWConfig3D.Log);
+
+                                        if (!_getFile)
+                                        {
+                                            pIRoutage.AddLogBox(pIFW3D.Logs, 3, "File SLDLFP Details Not Found : " + _path, eStatusLog.Alert);
+                                            // Alert return vret = false;
+                                        }
+                                    }
+                                }
+                                #endregion
+
+                                #region --- pIRoutage.GetSection Plans ds biblio\INI feuillure.ini
+                                {
+                                    string _descriptionFeuillure = string.Empty;
+                                    string[] _tabSectionPlans = null;
+                                    bool _getSection = getSection(_path_ini, "[Plans]", out _tabSectionPlans, lineNumber());
+                                    //if (!pIRoutage.GetSection(pIFW3D.Logs, 6, "Plans Feuillures",
+                                    //                            _path_ini, "[Plans]",
+                                    //                            out _tabSectionPlans,
+                                    //                            false, "", pIGenFWConfig3D.Log)
+                                    //    || _tabSectionPlans == null)
+                                    if (!_getSection)
+                                    {
+                                        pIRoutage.AddLogBox(pIFW3D.Logs, 3, $"Plans Feuillures INI Details Not Found : {_path_ini}", eStatusLog.Alert);
+                                        // il faut alerter bAlert = true
+                                    }
+                                    else
+                                    {
+                                        switch (_tabSectioni.Substring(_tabSectioni.Length - 2, 2))
+                                        {
+                                            #region --- switch
+                                            case "LT":
+                                            case "RT":
+                                                for (int j = 0; j < _tabSectionPlans.Length; j++)
+                                                {
+                                                    #region --- j
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 8, "SectionPlan(" + System.Convert.ToString(j) + ")=" + _tabSectionPlans[j], eStatusLog.Info);
+                                                    if ((_tabSectionPlans[j]).IndexOf(" - ") + 1 > 0)
+                                                    {
+                                                        string _bonPlan = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" - ") + 0);
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 9, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                        //--
+                                                        //SelectionPlan
+                                                        //--
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 10, "", _bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                        {
+                                                            int k = (_tabSectionPlans[j]).IndexOf(" ") + 1;
+                                                            while ((_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1 < (_tabSectionPlans[j]).IndexOf(" - ") + 1)
+                                                            {
+                                                                k = (_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1;
+                                                            }
+                                                            _bonPlan = _tabSectionPlans[j].Substring(0, k);
+                                                            k = (_tabSectionPlans[j]).IndexOf(" - ") + 1;
+                                                            _bonPlan = _bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1);
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs, 11, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                            //--
+                                                            //SelectionPlan
+                                                            //--
+                                                            if (!pIRoutage.SelectPlan(pIFW3D.Logs, 11, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                            {
+                                                                logError($"pIRoutage.SelectPlan -> false");
+                                                                return false;
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        string _bonPlan = _tabSectionPlans[j];
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 12, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                        //--
+                                                        //SelectionPlan
+                                                        //--
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 13, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                        {
+                                                            logError($"pIRoutage.SelectPlan -> false");
+                                                            return vret = false;
+                                                        }
+                                                    }
+                                                    #endregion
+                                                }
+
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 14, "Direction=" + System.Convert.ToString(_direction), eStatusLog.Info);
+
+                                                //--
+                                                //SelectionParEsquisse
+                                                //--
+                                                if (_direction == true)
+                                                {
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 15, "",
+                                                        "Axe Tongue " + System.Convert.ToString(_iNbrPlanNS),
+                                                        0,
+                                                        _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return false;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 16, "",
+                                                        "Axe Tongue 1",
+                                                        0,
+                                                        _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+                                                }
+                                                break;
+
+                                            case "LB":
+                                            case "RB":
+                                                for (int j = 0; j < _tabSectionPlans.Length; j++)
+                                                {
+                                                    #region --- j
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 17, "SectionPlan(" + System.Convert.ToString(j) + ")=" + _tabSectionPlans[j], eStatusLog.Info);
+                                                    if ((_tabSectionPlans[j]).IndexOf(" - ") + 1 > 0)
+                                                    {
+                                                        string _bonPlan = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" - ") + 0);
+
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 18, "BonPlan=" + _bonPlan, eStatusLog.Info);
+
+                                                        // SelectionPlan
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 19, "", _bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                        {
+                                                            int k = (_tabSectionPlans[j]).IndexOf(" ") + 1;
+                                                            while ((_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1 < (_tabSectionPlans[j]).IndexOf(" - ") + 1)
+                                                            {
+                                                                k = (_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1;
+                                                            }
+                                                            _bonPlan = _tabSectionPlans[j].Substring(0, k);
+                                                            k = (_tabSectionPlans[j]).IndexOf(" - ") + 1;
+                                                            _bonPlan = _bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1);
+
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs, 20, "BonPlan=" + _bonPlan, eStatusLog.Info);
+
+                                                            // SelectionPlan
+                                                            if (!pIRoutage.SelectPlan(pIFW3D.Logs, 21, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                            {
+                                                                logError($"pIRoutage.SelectPlan -> false");
+                                                                return vret = false;
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        string _bonPlan = _tabSectionPlans[j];
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 22, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                        // SelectPlan
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 23, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                        {
+                                                            logError($"pIRoutage.SelectPlan -> false");
+                                                            return vret = false;
+                                                        }
+                                                    }
+                                                    #endregion
+                                                }
+
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 24, "Direction=" + System.Convert.ToString(_direction), eStatusLog.Info);
+
+                                                // SelectByEsquisse
+                                                if (_direction == true)
+                                                {
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 25, "",
+                                                        "Axe Tongue 1",
+                                                        0,
+                                                        _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 26, "",
+                                                        "Axe Tongue " + System.Convert.ToString(_iNbrPlanNS),
+                                                        0, _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+                                                }
+                                                break;
+
+                                            case "LM":
+                                            case "RM":
+                                                for (int j = 0; j < _tabSectionPlans.Length; j++)
+                                                {
+                                                    #region --- j
+                                                    pIRoutage.AddLogBox(pIFW3D.Logs, 27, "SectionPlan(" + System.Convert.ToString(j) + ")", eStatusLog.Info);
+
+                                                    if ((_tabSectionPlans[j]).IndexOf(" - ") + 1 > 0)
+                                                    {
+                                                        string _bonPlan = _tabSectionPlans[j].Substring(0, (_tabSectionPlans[j]).IndexOf(" - ") + 0);
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 28, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                        //--
+                                                        //SelectionPlan
+                                                        //--
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 29, "", _bonPlan, j, false, eKeyRun.OnAlertSuccessReturnFalse.ToString(), pIGenFWConfig3D.Log))
+                                                        {
+                                                            int k = (_tabSectionPlans[j]).IndexOf(" ") + 1;
+                                                            while ((_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1 < (_tabSectionPlans[j]).IndexOf(" - ") + 1)
+                                                            {
+                                                                k = (_tabSectionPlans[j]).IndexOf(" ", k + 1 - 1) + 1;
+                                                            }
+                                                            _bonPlan = _tabSectionPlans[j].Substring(0, k);
+                                                            k = (_tabSectionPlans[j]).IndexOf(" - ") + 1;
+                                                            _bonPlan = _bonPlan + _tabSectionPlans[j].Substring(k + 3 - 1);
+                                                            pIRoutage.AddLogBox(pIFW3D.Logs, 30, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                            //--
+                                                            //SelectionPlan
+                                                            //--
+                                                            if (!pIRoutage.SelectPlan(pIFW3D.Logs, 31, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                            {
+                                                                logError($"pIRoutage.SelectPlan -> false");
+                                                                return vret = false;
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        string _bonPlan = _tabSectionPlans[j];
+                                                        pIRoutage.AddLogBox(pIFW3D.Logs, 32, "BonPlan=" + _bonPlan, eStatusLog.Info);
+                                                        // SelectPlan
+                                                        if (!pIRoutage.SelectPlan(pIFW3D.Logs, 33, "", _bonPlan, j, false, "", pIGenFWConfig3D.Log))
+                                                        {
+                                                            logError($"pIRoutage.SelectPlan -> false");
+                                                            return vret = false;
+                                                        }
+                                                    }
+                                                    #endregion
+                                                }
+
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 34, "Direction=" + System.Convert.ToString(_direction), eStatusLog.Info);
+
+                                                // SelectByEsquisse
+                                                if (_direction == true)
+                                                {
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 35, "",
+                                                        "Axe Tongue " + System.Convert.ToString(GBConversion.Int((double)(__languetteEncour) / 2)),
+                                                        0,
+                                                        _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        // TBC
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 36, "",
+                                                        "Axe Tongue " + System.Convert.ToString(GBConversion.Int((double)(__languetteEncour) / 2) + 1),
+                                                        0,
+                                                        _marqueur + 1,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+
+                                                    _descriptionFeuillure = System.Convert.ToString(GBConversion.Int((double)(__languetteEncour) / 2)) + "-" + GBConversion.Str(GBConversion.Int((double)(__languetteEncour) / 2) + 1);
+                                                }
+                                                else
+                                                {
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 37, "",
+                                                        "Axe Tongue " + System.Convert.ToString(_iNbrPlanNS - GBConversion.Int((double)(__languetteEncour) / 2) + 1),
+                                                        0,
+                                                        _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+                                                    if (!pIRoutage.SelectByEsquisse(pIFW3D.Logs, 38, "",
+                                                        "Axe Tongue " + System.Convert.ToString(_iNbrPlanNS - GBConversion.Int((double)(__languetteEncour) / 2)),
+                                                        0,
+                                                        _marqueur,
+                                                        false,
+                                                        "",
+                                                        pIGenFWConfig3D.Log))
+                                                    {
+                                                        logError($"pIRoutage.SelectByEsquisse -> false");
+                                                        return vret = false;
+                                                    }
+                                                    _descriptionFeuillure = System.Convert.ToString(_iNbrPlanNS - GBConversion.Int((double)(__languetteEncour) / 2) + 1) + "-" + System.Convert.ToString(_iNbrPlanNS - GBConversion.Int((double)(__languetteEncour) / 2));
+                                                }
+
+                                                pIRoutage.AddLogBox(pIFW3D.Logs, 39, "DescriptionFeuillure=" + _descriptionFeuillure, eStatusLog.Info);
+
+                                                break;
+                                                #endregion
+                                        }
+
+                                        #region --- InsertLibrary
+                                        {
+                                            //string _libraryPath = _racinePDM + _pathR_BibDetails + "\\" + _tabSections[i] + ".SLDLFP";
+                                            string _libraryPath = Path.ChangeExtension(Path.Combine(_racinePDM, _pathR_BibDetails, _tabSections[i]), ".SLDLFP");
+                                            if (!pIRoutage.InsertLibrary(pIFW3D.Logs, 40, "",
+                                                _libraryPath,
+                                                out _libraryName,
+                                                false,
+                                                "",
+                                                pIGenFWConfig3D.Log))
+                                            {
+                                                logError($"pIRoutage.InsertLibrary -> false");
+                                                return vret = false;
+                                            }
+                                            else
+                                            {
+                                                pIFW3D.FeuilluresInserted.Add(_libraryPath);
+                                            }
+                                        }
+                                        #endregion
+
+                                        // ModifLibrairie
+                                        pIRoutage.SetLibrary(pIFW3D.Logs, 41, "", _libraryName, System.Math.Abs(GBConversion.Val(_tabSections[i + 1].Substring(5))), false, "", pIGenFWConfig3D.Log);
+                                        pIRoutage.SetDescriptionFonction(pIFW3D.Logs, 42, "", _libraryName, _descriptionFeuillure, false, "", pIGenFWConfig3D.Log);
+
+                                        //--
+                                        pIRoutage.ReBuild(pIFW3D.Logs, 43, "", false, "", pIGenFWConfig3D.Log);
+                                        pIRoutage.DeleteAllEquation(pIFW3D.Logs, 44, "", false, "", pIGenFWConfig3D.Log);
+                                        pIRoutage.MoveFunction(pIFW3D.Logs, 45, "", _libraryName, "Feuillure", false, "", pIGenFWConfig3D.Log, true);
+                                        pIRoutage.ReBuild(pIFW3D.Logs, 46, "", false, "", pIGenFWConfig3D.Log);
+                                    }
+                                }
+                                #endregion
+
+                                #endregion
+                            }
+                        }
+                        #endregion
+
+                        bool _forceRebuild = pIRoutage.ForceRebuild(pIFW3D.Logs, 47, "", false, false, "", pIGenFWConfig3D.Log);
+                        logTrace($"pIRoutage.ForceRebuild -> {_forceRebuild}");
+                    }
+                    #endregion
+
+                    // return true; // TMP : pas de partition
+
+                    #region --- CONFIGURATIONS
+                    {
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SET_CONFIGURATIONS_FWPRT", pIFW3D.Sections);
+
+                        // DeleteConfiguration
+                        // pas une erreur
+                        pIRoutage.DeleteConfiguration(pIFW3D.Logs, 2, "", "WITHOUT SCREW-STAPLE", false, false, "", pIGenFWConfig3D.Log);
+
+                        // ConfigTopMoved
+                        // pas une erreur si element non trouvé
+                        pIRoutage.ConfigTopMoved(pIFW3D.Logs, 3, "", false, false, "", pIGenFWConfig3D.Log);
+
+                        pIFW3D.ProjectType = pICSVFile.Chantier;
+
+                        pIRoutage.AddLogBox(pIFW3D.Logs, 6, pIFW3D.ProjectType, eStatusLog.Info);
+
+                        pIRoutage.HiddenScrewStapleCleat(pIFW3D.Logs, 9, "", false, "", pIGenFWConfig3D.Log);
+
+                        pIRoutage.ForceRebuild(pIFW3D.Logs, 10, "", false, false, "", pIGenFWConfig3D.Log);
+
+                        pIRoutage.HiddenStapple(pIFW3D.Logs, 11, "", false, "", pIGenFWConfig3D.Log);
+
+                        pIRoutage.FlecheNoStandard(pIFW3D.Logs, 12, "", false, "", pIGenFWConfig3D.Log);
+
+                        pIRoutage.ReBuild(pIFW3D.Logs, 13, "", false, "", pIGenFWConfig3D.Log);
+
+                        pIRoutage.ForceRebuild(pIFW3D.Logs, 14, "", false, false, "", pIGenFWConfig3D.Log);
+                    }
+                    #endregion
+
+                    #region --- ESQUISSES de Librairies (Masquage)
+                    {
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "HIDE_LIBRARYSKETCH_FWPRT", pIFW3D.Sections);
+                        //pas une erreur si element non trouvé
+                        pIRoutage.HideLibrarySketch(pIFW3D.Logs, 1, "", false, false, "", pIGenFWConfig3D.Log);
+                    }
+                    #endregion
+
+                    // return true; // TMP : pas de partition
+
+                    #region --- MISE A JOUR TOUTES DIMENSIONS / Config BOX
+                    {
+                        //NCR_817 // PAR le 28 aout 2013
+                        pIMDI.progBar2_PerformStep();
+                        pIRoutage.AddLogBoxSection(pIFW3D.Logs, "CALL_NCR817_UPDATEDIMENSIONS_FWPRT", pIFW3D.Sections);
+
+                        // pIRoutage.StartNCR817
+                        if (pIRoutage.StartNCR817(pIFW3D.Logs, 1, "Mise à jour Dimensions All Config", pIFW3D.Name, false, "", pIGenFWConfig3D.Log))
+                        {
+                            pIMDI.progBar2_PerformStep();
+                        }
+                    }
+                    #endregion
+
+                    // return true; // TMP : pas de partition
+                }
+            #endregion
+
+            L0:;
+                #region --- SAUVEGARDE CAISSON
+                {
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "SAVE_FWPRT", pIFW3D.Sections);
+                    bool _saveDoc = pIRoutage.SaveDoc(pIFW3D.Logs, 1, "Path3DCreated", false, "", pIGenFWConfig3D.Log);
+                    logTrace($"pIRoutage.SaveDoc -> {_saveDoc}");
+                }
+                #endregion
+
+                #region --- CLOSE_FWPRT Section
+                {
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "CLOSE_FWPRT", pIFW3D.Sections);
+                    bool _closeDoc = pIRoutage.CloseDoc(pIFW3D.Logs, 1, "", "", pIGenFWConfig3D.Log);
+                    logTrace($"pIRoutage.CloseDoc -> {_closeDoc}");
+                    pIxSW.AmeliorationPerf = false;
+                }
+                #endregion
+
+                #region --- ADDVAULT_FWPRT Section
+                {
+                    pIMDI.progBar2_PerformStep();
+                    pIRoutage.AddLogBoxSection(pIFW3D.Logs, "ADDVAULT_FWPRT", pIFW3D.Sections);
+
+                    bool _fileExist = pIRoutage.FileExist(pIFW3D.Logs, 3, "",
+                        pIFW3D.Path3DCreated,
+                        CloseFile: false,
+                        eKeyRun.OnAlertSuccessReturnFalse.ToString(),
+                        pIGenFWConfig3D.Log);
+                    logTrace($"pIRoutage.FileExist('{pIFW3D.Path3DCreated}') -> {_fileExist}");
+
+                    if (!_fileExist)
+                    {
+                        if (!pIRoutage.AddFileToVault(pIFW3D.Logs, 3, "", // createBox3D
+                            pIFW3D.Path3DCreated,
+                            CloseFile: false,
+                            "",
+                            pIGenFWConfig3D.Log))
+                        {
+                            logError($"pIRoutage.AddFileToVault(pIFW3D.Path3DCreated='{pIFW3D.Path3DCreated}') -> false");
+                            return vret = false;
+                        }
+                    }
+                }
+                #endregion
+
+                return vret = true;
+                #endregion
+            }
+            catch (Exception e)
+            {
+                pIRoutage.AddLogBox(pIFW3D.Logs, 0, e.Message, eStatusLog.Error);
+
+                if (OnErrorContinue)
+                {
+                    //Avertissement (Alerte Bleue)
+                    pIRoutage.CreateInfoLog("CreateBox3D", "!! Error=" + e.Message, true, false, "");
+                }
+                else
+                {
+                    //Erreur (Alerte Orange) Stop Process
+                    pIRoutage.CreateInfoLog("CreateBox3D", "!", true, false, e.Message);
+                }
+
+                logError(e);
+
+                return vret = false;
+            }
+            finally
+            {
+                logInfo($"{nameof(__3D)}.{nameof(createBox3D)}(+) -> {vret}");
+
+                {
+                    bool _closeDoc = pIRoutage.CloseDoc(pIFW3D.Logs, 0, pIFW3D?.Path3DCreated);
+                    logTrace($"CloseDoc(pIFW3D?.Path3DCreated='{pIFW3D?.Path3DCreated}') -> {_closeDoc}");
+                }
+
+                try
+                {
+                    bool _unLockFile = pIPDM.UnLockFile(GBLog.Empty, pIFW3D?.Path3DCreated);
+                    logTrace($"UnLockFile(pIFW3D?.Path3DCreated='{pIFW3D?.Path3DCreated}') -> {_unLockFile}");
+                }
+                catch
+                {
+                }
+
+                if (!vret)
+                {
+                    bool _fileExists0 = __Utils.FileExists(pIFW3D?.Path3DCreated);
+                    bool _deleteFile = pIPDM.DeleteFile(GBLog.Empty, pIFW3D?.Path3DCreated);
+                    bool _fileExists1 = __Utils.FileExists(pIFW3D?.Path3DCreated);
+                    logTrace($"DeleteFile(pIFW3D?.Path3DCreated='{pIFW3D?.Path3DCreated}') -> {_deleteFile} _fileExists(-)={_fileExists0} _fileExists(+)={_fileExists1}");
+                }
+
+                pIRoutage.AddLogBoxEndSub(pIFW3D.Logs, _logBoxBeginSub);
+
+                logInfo($"{nameof(__3D)}.{nameof(createBox3D)}(++) -> {vret}");
+            }
+        }
+
+        #endregion
+
+        #region --- CreateJobXMLLogUser, CreateJobTextLogUser
+
+        private static void createInfoLog(string SubName, string Info, bool WriteOnDisk, bool ShowMessage, string ErrorMessage, bool Clear = false)
+        {
+        }
+
+        public static string CreateJobXMLLogUser(GBLog oLog,
+            FW3D oFW3D,
+            string JobName,
+            GenFWConfig3D oConfig,
+            bool bSuccess,
+            string ItemText,
+            string MyLogFolder)
+        {
+            try
+            {
+                #region --- LOG XML
+                bool bAlert = false;
+
+                oFW3D.Log = oConfig.Log;
+                oFW3D.Version = oConfig.Version;
+
+                string[] Tab;
+                string Section = "";
+                string Line = "";
+                string SubName = "";
+                bool bError = false;
+                bool bOneAlert = false;
+
+                if (oFW3D.Logs != null)
+                {
+                    foreach (string log in oFW3D.Logs)
+                    {
+                        #region --- foreach
+                        string _log = log?.Trim();
+                        if (string.IsNullOrEmpty(_log)) continue;
+
+                        if (_log.Length >= 2 && _log.Substring(0, 2) == "!!")
+                        {
+                            bError = true;
+                        }
+                        if (_log.Length >= 1 && _log.Substring(0, 1) == "!")
+                        {
+                            bAlert = true;
+                            bOneAlert = true;
+                            oFW3D.Alerts.Add(_log);
+                            Tab = (_log.Replace("! ", "")).Split('.');
+                            Section = Tab[0].Trim();
+                            Line = Tab[1].Trim();
+                            SubName = Tab[2].Trim();
+                            Tab = SubName.Split('(');
+                            SubName = Tab[0].Trim();
+                        }
+                        else
+                        {
+                            if (bAlert)
+                            {
+                                Tab = (_log.Replace(". .", "")).Split('.');
+                                if (Tab.Length >= 4)
+                                {
+                                    if (Tab[2].Trim() == Section && Tab[3].Trim() == Line)
+                                    {
+                                        if (Tab[2].Trim() == Section && Tab[3].Trim() == Line)
+                                        {
+                                            if (_log.IndexOf(Section + "." + Line + "." + SubName) + 1 != 0)
+                                            {
+                                                if (_log.IndexOf("Alert=") + 1 != 0)
+                                                {
+                                                    oFW3D.Alerts.Add(_log);
+                                                }
+                                                else
+                                                {
+                                                    if (_log.IndexOf("Error=") + 1 != 0)
+                                                    {
+                                                        oFW3D.Alerts.Add(_log);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        bAlert = false;
+                                    }
+                                }
+                                else
+                                {
+                                    bAlert = false;
+                                }
+                            }
+                        }
+                        #endregion
+                    }
+                }
+
+                if (!bSuccess && bError)
+                {
+                    // Status Generation en Error
+                    oFW3D.Status = eStatus.Error;
+                    oFW3D.XMLLogPath = Path.Combine(MyLogFolder, oFW3D.Name + ".Error.xml");
+                    xSerialization.Serialize_FW3D(oFW3D, oFW3D.XMLLogPath);
+                    createInfoLog(oLog.SubName, "", true, false, "!! Error " + JobName + " " + ItemText + " .. see " + oFW3D.XMLLogPath);
+                    oLog.SetMaxStatus(eStatusLog.Error);
+                    return oFW3D.XMLLogPath;
+                }
+
+                if (bOneAlert)
+                {
+                    // Status Generation en Alert
+                    oFW3D.Status = eStatus.Alert;
+                    oFW3D.XMLLogPath = Path.Combine(MyLogFolder, oFW3D.Name + ".Alert.xml");
+                    xSerialization.Serialize_FW3D(oFW3D, oFW3D.XMLLogPath);
+                    createInfoLog(oLog.SubName, "! Alert " + JobName + " " + ItemText + " .. see " + oFW3D.XMLLogPath, true, false, "");
+                    oLog.SetMaxStatus(eStatusLog.Alert);
+                    return oFW3D.XMLLogPath;
+
+                }
+
+                {
+                    // Status Generation en Success
+                    oFW3D.Status = eStatus.Success;
+                    oFW3D.XMLLogPath = Path.Combine(MyLogFolder, oFW3D.Name + ".xml");
+                    xSerialization.Serialize_FW3D(oFW3D, oFW3D.XMLLogPath);
+                    createInfoLog(oLog.SubName, "Success " + JobName + " " + ItemText + " " + oFW3D.XMLLogPath, true, false, "");
+                    oLog.SetMaxStatus(eStatusLog.Success);
+                    return oFW3D.XMLLogPath;
+                }
+
+                #endregion
+            }
+            catch (Exception e)
+            {
+                createInfoLog("CreateJobXMLLogUser", "", true, false, e.Message);
+                return string.Empty;
+            }
+        }
+
+        public static string CreateJobTextLogUser(GBLog oLog,
+            List<FW3D> oFW3DS,
+            string JobName,
+            string MyLogFolder)
+        {
+            if (oFW3DS == null) return string.Empty;
+
+            try
+            {
+                #region --- try
+                //pIMDI.MyLogForm.lbl_TitleInfo.Text = "Logs"
+
+                // Ecriture du Log User Recapitulatif
+
+                //pIMDI.ClearLog();
+                //pIMDI.SetTitleLog("Begin Job : " & JobName & "  " & pIMDI.MyJobTime)
+                //pIMDI.SetTitleLog(oLog.SubName, ix, oListINI.Count, oINI.Box)
+
+                string strLog = "Begin Job : " + JobName + " ";
+                foreach (FW3D oFW3D in oFW3DS)
+                {
+                    #region --- foreach
+                    strLog = strLog + "\r\n" + "------";
+                    strLog = strLog + "\r\n" + oFW3D.Name;
+                    strLog = strLog + "\r\n" + "Path3DCreated=" + oFW3D.Path3DCreated;
+                    strLog = strLog + "\r\n" + "Path3DModel=" + oFW3D.Path3DModel;
+
+                    //Ecriture des alertes
+                    foreach (string _log in oFW3D.Logs)
+                    {
+                        if (string.IsNullOrEmpty(_log)) continue;
+                        if (_log.StartsWith("!"))
+                        {
+                            strLog = strLog + "\r\n" + _log;
+                            //pIMDI.MyLogForm.AddAlertAndError(str1)
+                        }
+                        else
+                        {
+                            if (_log.StartsWith("Alert="))
+                            {
+                                strLog = strLog + "\r\n" + _log;
+                                //pIMDI.MyLogForm.AddAlertAndError(str1)
+                            }
+                            else
+                            {
+                                if (_log.StartsWith("Error="))
+                                {
+                                    strLog = strLog + "\r\n" + _log;
+                                    // pIMDI.MyLogForm.AddAlertAndError(str1)
+                                }
+                            }
+                        }
+                    }
+
+                    strLog = strLog + "\r\n" + " --> Status " + JobName + "=" + oFW3D.Status.ToString();
+                    strLog = strLog + "\r\n" + "";
+
+                    #endregion
+                }
+
+                createInfoLog(oLog.SubName, strLog, true, false, "");
+
+                //--
+                //Ecriture Report sur disque
+                //--
+                string _path = Path.Combine(MyLogFolder, JobName + ".Report.txt");
+                System.IO.File.WriteAllText(_path, strLog);
+
+                return _path;
+                #endregion
+            }
+            catch (Exception e)
+            {
+                createInfoLog("CreateJobTextLogUser", "", true, false, e.Message);
+                return string.Empty;
+            }
+        }
+
+        #endregion
+
+    }
+
+
+}
