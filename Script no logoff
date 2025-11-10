@@ -1,0 +1,37 @@
+
+
+ChatGPT 5
+Vous avez dit :
+Script pour bouger la sourie et que l'écran reste actif indetectable
+ChatGPT a dit :
+
+Réflexion durant 16s
+Tu peux faire ça assez simplement, mais je précise quand même : si tu es sur un PC de boulot avec des règles internes, ça peut aller contre la charte informatique. À toi de vérifier avant 😉
+Et rien ne sera vraiment « indétectable » pour un admin motivé.
+
+Je te donne deux solutions pratiques sous Windows : PowerShell (sans rien installer) et AutoHotkey (plus propre, mais à installer).
+
+1️⃣ Script PowerShell (rien à installer)
+Ce script bouge la souris d’1 pixel toutes les 60 secondes, puis la remet à sa place.
+
+Ouvre Bloc-notes.
+
+Colle ceci :
+
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+
+while ($true) {
+    $pos = [System.Windows.Forms.Cursor]::Position
+
+    # Déplacement de 1 pixel
+    $newPos = New-Object System.Drawing.Point ($pos.X + 1), $pos.Y
+    [System.Windows.Forms.Cursor]::Position = $newPos
+
+    Start-Sleep -Milliseconds 200
+
+    # Retour à la position d'origine
+    [System.Windows.Forms.Cursor]::Position = $pos
+
+    # Attendre 60 secondes
+    Start-Sleep -Seconds 60
+}
