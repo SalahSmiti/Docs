@@ -1,0 +1,74 @@
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Keyboard {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+}
+"@
+
+# 0x10 = VK_SHIFT
+$VK_SHIFT = 0x10
+$KEYEVENTF_KEYUP = 0x0002
+
+while ($true) {
+    # Appui sur SHIFT
+    [Keyboard]::keybd_event($VK_SHIFT, 0, 0, 0)
+    Start-Sleep -Milliseconds 50
+    # Relâchement de SHIFT
+    [Keyboard]::keybd_event($VK_SHIFT, 0, $KEYEVENTF_KEYUP, 0)
+
+    # Attente 60 secondes
+    Start-Sleep -Seconds 60
+}
+Enregistre le fichier en .ps1, par exemple :
+anti_veille_clavier.ps1
+
+Clique droit dessus → Exécuter avec PowerShell
+
+Tant que la fenêtre PowerShell reste ouverte, le script tourne.
+
+👉 Tu peux changer l’intervalle en modifiant 60 (secondes) à la fin.
+
+⚙️ Si ça ne marche toujours pas
+Vérifie ces points (rapide) :
+
+1️⃣ PowerShell a le droit d’exécuter le script ?
+Ouvre PowerShell en admin, puis tape :
+
+powershell
+Copier le code
+Get-ExecutionPolicy
+Si tu vois Restricted, les scripts sont bloqués.
+
+Dans ce cas, lance ton script comme ça (sans changer la politique globale) :
+
+powershell
+Copier le code
+powershell.exe -ExecutionPolicy Bypass -File "C:\Chemin\vers\anti_veille_clavier.ps1"
+(en adaptant le chemin évidemment).
+
+2️⃣ Est-ce que la politique de ton entreprise force le verrouillage ?
+Dans certains environnements pro, même avec de l’activité souris/clavier, une GPO impose un verrouillage après X minutes.
+Si c’est le cas, aucun script côté utilisateur ne pourra contourner la règle : c’est géré côté serveur / domaine.
+
+🧩 Si tu veux, je peux aussi :
+Te faire un .vbs (double clic, pas de fenêtre visible).
+
+Ou un script AutoHotkey encore plus discret si tu peux installer un petit outil.
+
+Dis-moi juste ce que tu préfères (sans rien installer / avec AutoHotkey) et je t’écris la version prête à l’emploi 👍
+
+
+
+
+
+
+
+
+
+
+
+
+
+ChatGPT peut commettre des erreurs. Il est recommandé de vérifier les informations importantes. Voir les préférences en 
